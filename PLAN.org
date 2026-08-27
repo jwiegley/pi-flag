@@ -9,10 +9,10 @@
 :LABELS:   ["planning","research"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 14:03]
+:MODIFIED: [2026-08-27 Thu 14:39]
 :CREATED_BY: johnw
-:FINISHED: [2026-08-27 Thu 14:03]
-:CLOSE_REASON: Completed after second audit: pi-flag implementation plan is comprehensive and ready for review.
+:FINISHED: [2026-08-27 Thu 14:39]
+:CLOSE_REASON: Completed comprehensive source-grounded implementation plan after three independent audit rounds.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -47,6 +47,13 @@ Reviewed Markdown plan covers source evidence, prior art, package architecture, 
     "author": "pi",
     "text": "Reopened: Independent audit found missing source citations and semantic gaps in stop reasons, actual pi install smoke, peer compatibility, and extension ordering.",
     "created_at": "2026-08-27T20:55:16Z"
+  },
+  {
+    "id": 13,
+    "issue_id": "flag-implementation-plan-n3z",
+    "author": "pi",
+    "text": "Reopened: Independent audit found stale prompt double-count risk plus missing accessibility, prompt-cache, and dependency-security verification.",
+    "created_at": "2026-08-27T21:08:00Z"
   }
 ]
 #+end_src
@@ -398,11 +405,11 @@ pi-flag-implementation-plan.md is complete enough to execute without rediscoveri
 :LABELS:   ["planning","review"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 14:03]
+:MODIFIED: [2026-08-27 Thu 14:39]
 :ASSIGNEE: pi
 :CREATED_BY: johnw
-:FINISHED: [2026-08-27 Thu 14:03]
-:CLOSE_REASON: Completed second audit fixes: added source citations and exact stop, install, compatibility, and middleware-order contracts/tests.
+:FINISHED: [2026-08-27 Thu 14:39]
+:CLOSE_REASON: Completed third audit fixes: stale-prompt-safe capacity gate, accessibility matrix, cache tests, and dependency security evidence.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -483,6 +490,20 @@ Plan passes completeness audit and is ready for user review.
     "author": "pi",
     "text": "Second independent audit findings addressed:\n\n1. Added local range citations for the public faux-provider harness (`fauxProvider`, ModelRuntime, ResourceLoader, SettingsManager, SessionManager, SDK), KeybindingsManager/Input behavior, all StopReason values and persistence/display, package install/resolution, isolated config, RPC command discovery, and extension middleware ordering.\n2. Defined exact assistant eligibility for all seven StopReason values: pending/deferred reject; stop/length/toolUse/error/aborted require visible text; errorMessage is never projected; length/aborted provenance retained.\n3. Replaced install-directory-only smoke with actual isolated `PI_CODING_AGENT_DIR` `pi install` + `pi list` + RPC `get_commands` for both source package and packed-tarball-installed directory.\n4. Added exact peerDependencies/peerDependenciesMeta/devDependencies JSON and exact supported range `>=0.84.3 <0.85.0`, tested baseline 0.84.3, plus README/package tests.\n5. Fully specified extension ordering: earlier input transforms are assessed; later input growth may only cause visible aggregate overflow; cooperative before-agent handlers preserve a SHA-256 sentinel; destructive later system-prompt replacement is detected by a context-time integrity guard that aborts without mutating messages; post-context provider payload mutation remains the explicit trusted-extension boundary. Added ordering tests and direct-custom-trigger safe abort behavior.\n\nNo production files or Pi source files changed.",
     "created_at": "2026-08-27T21:03:27Z"
+  },
+  {
+    "id": 14,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Reopened: Independent audit found stale prompt double-count risk plus missing accessibility, prompt-cache, and dependency-security verification.",
+    "created_at": "2026-08-27T21:08:00Z"
+  },
+  {
+    "id": 15,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Third independent-audit findings addressed:\n\n1. Capacity/prompt freshness: input now performs only state/model/focus admission and is forbidden from reading `ctx.getSystemPrompt()`. `before_agent_start` receives the upcoming base prompt and final expanded text/images, caches their token estimate plus the exact focus generation, and appends one canonical SHA-256-sentinelled block. `context` observes the post-chain system prompt, requires exactly one byte-identical block, and assesses that prompt with the block already present. Two-turn stale-effective-prompt tests prove no double count or false rejection. Removal, alteration, duplication, or impossible mandatory floor notifies visibly and raises `AbortSignal` before conversion; the plan explicitly states that a provider ignoring an already-aborted signal is outside the extension-only guarantee.\n2. Accessibility: section 11.1 now defines a named automated/manual matrix for keyboard-only operation, visible ASCII focus, non-color state, configurable bindings, cancel/no trap, Unicode/paste, and narrow terminals. Task 3.1 names the tests; Task 6.2 records host/protocol results and plain-text/ANSI captures. Unverified rows block corresponding claims.\n3. Prompt cache: deterministic block bytes/order and faux common-prefix accounting now have explicit first-write, unchanged-turn reuse, changed flag/add/remove/reorder invalidation, and zero/one-block assertions. The plan distinguishes deterministic faux evidence from provider-independent cache-hit guarantees.\n4. Dependency security: section 7 now gives a direct-package necessity/version/exposure table and separates direct-package review from transitive graph review. Task 0.1 verifies npm signatures/attestation metadata, downloads and inspects each direct registry tarball and manifest, compares integrity/repository metadata, captures the complete lock/`npm ls` graph and both audits, enumerates every transitive preinstall/install/postinstall script with `npm query`, and requires explicit disposition. Missing provenance, signature failures, uninspected tarballs, undispositioned install scripts, and high/critical advisories block completion.\n\nA read-only reviewer independently confirmed the revised lifecycle/AbortSignal boundary, accessibility matrix, and faux cache design against source. Its sole medium finding was the missing tarball/provenance/transitive lifecycle evidence; item 4 adds the requested commands and acceptance artifacts.\n\nFresh checks: Pi HEAD is exactly `4e494929998d6bc4fccf75e0a233f727db4b70ee`; `git diff -- packages` is empty; the plan has 15 tasks, 62 balanced fences, no placeholders/stale capacity phrases, and complete predecessor/files/checks/evidence/rollback fields. No production files, dependencies, tests, provider calls, or Pi source changes were made.\n",
+    "created_at": "2026-08-27T21:38:55Z"
   }
 ]
 #+end_src
