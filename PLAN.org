@@ -549,15 +549,18 @@ All eligibility and exact-text tests pass.
 ]
 #+end_src
 
-* TODO [#B] 2.1 Implement deterministic projection    :implementation:
+* DONE [#B] 2.1 Implement deterministic projection    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.5
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:33]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:33]
+:CLOSE_REASON: Lossless deterministic projection, append behavior, and exact-block sentinel verification implemented.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -590,6 +593,20 @@ Projection is stable, lossless, and sentinel-verified.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 20,
+    "issue_id": "flag-3ph.5",
+    "author": "pi",
+    "text": "Task 2.1 evidence:\n\n- Added deterministic `src/focus.ts` projection from activation-sorted fresh V1 observation objects.\n- Stable wrapper quotes flagged text as data and preserves current instruction precedence/conflict reporting.\n- JSON round trips exact empty blocks, whitespace/newlines, delimiter-like text, Unicode, and lone surrogates.\n- SHA-256 sentinel is session-domain-separated and contains no flagged text.\n- Empty focus is prompt identity; append preserves the earlier chained prompt byte-for-byte and adds the block at the end.\n- Integrity accepts exactly one canonical block/sentinel and rejects removal, alteration, duplicate block, or duplicate sentinel.\n- Enumerable arbitrary host properties are never read/serialized; source objects and block arrays are not mutated.\n\nChecks: focused projection tests 7/7 pass; typecheck pass; full `npm run check` 23/23 pass; pack surface contains only approved files.\n",
+    "created_at": "2026-08-27T22:33:02Z"
   }
 ]
 #+end_src
