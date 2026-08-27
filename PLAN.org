@@ -611,15 +611,18 @@ Projection is stable, lossless, and sentinel-verified.
 ]
 #+end_src
 
-* TODO [#B] 2.2 Implement capacity assessment    :implementation:
+* DONE [#B] 2.2 Implement capacity assessment    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.6
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:43]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:43]
+:CLOSE_REASON: Stale-prompt-independent focus admission and post-chain final capacity assessment implemented.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -652,6 +655,20 @@ Focus/final capacity boundary tests pass without stale-prompt reads.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 21,
+    "issue_id": "flag-3ph.6",
+    "author": "pi",
+    "text": "Task 2.2 evidence:\n\n- Added host-estimator text/current-image token accounting, fixed focus limit, and bounded model response reserve.\n- Focus admission accepts only serialized focus + model; it has no system-prompt parameter, so stale prior effective prompts cannot be counted.\n- Empty focus remains usable without a model; active focus blocks visibly when model is absent or cap is exceeded.\n- Final assessment receives the already-projected post-chain system prompt exactly once plus cached expanded text/image tokens and reserve.\n- Exact boundary ±1, no-model, reserve bounds, model downsizing, changed chained prompt, image contribution, two sequential admissions, deterministic reasons/remedies, and no mutation are tested.\n- Rejection messages state that nothing was truncated and direct users to `/flag` or a larger model.\n\nChecks: focused focus tests 13/13 pass; typecheck pass; full `npm run check` 29/29 pass; pack surface valid.\n",
+    "created_at": "2026-08-27T22:43:02Z"
   }
 ]
 #+end_src

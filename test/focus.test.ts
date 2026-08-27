@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fauxProvider } from "@earendil-works/pi-ai";
 import {
   appendFocus,
+  assessFinalRequest,
+  assessFocusAdmission,
+  estimateInputTokens,
   estimateTextTokens,
+  focusLimit,
+  responseReserve,
   serializeFocus,
   verifyFocusProjection,
   type SerializedFocus,
@@ -24,6 +30,14 @@ function activeFlag(
     activationIndex,
     ...(role === "assistant" ? { assistantStopReason: "stop" as const } : {}),
   };
+}
+
+function testModel(contextWindow = 128000, maxTokens = 16384) {
+  return { ...fauxProvider().getModel(), contextWindow, maxTokens };
+}
+
+function focusWithTokens(estimatedTokens: number): SerializedFocus {
+  return { block: "focus", sentinel: "sentinel", estimatedTokens };
 }
 
 function observations(focus: SerializedFocus): unknown {
@@ -162,4 +176,134 @@ test("integrity accepts one exact block and rejects removal, alteration, or dupl
     reason: "Expected one exact pi-flag block; found 1 block(s) and 2 sentinel(s)",
     occurrences: 1,
   });
+});
+
+test("estimates text, images, focus limits, and response reserves", () => {
+  assert.equal(estimateTextTokens("abcde"), 2);
+  assert.equal(
+    estimateInputTokens("text", [
+      { type: "image", data: "AA==", mimeType: "image/png" },
+      { type: "image", data: "AA==", mimeType: "image/jpeg" },
+    ]),
+    2401,
+  );
+  assert.equal(focusLimit(128000), 32000);
+  assert.equal(focusLimit(200000), 32768);
+  assert.equal(focusLimit(3), 0);
+  assert.equal(responseReserve(testModel(128000, 1000)), 4096);
+  assert.equal(responseReserve(testModel(128000, 8000)), 8000);
+  assert.equal(responseReserve(testModel(128000, 20000)), 16384);
+});
+
+test("focus admission handles no model, exact boundaries, and downsizing without prompt input", () => {
+  const emptyFocus = serializeFocus(new Map(), "session");
+  assert.deepEqual(assessFocusAdmission({ focus: emptyFocus, model: undefined }), {
+    status: "ready",
+    focusTokens: 0,
+  });
+
+  const noModel = assessFocusAdmission({ focus: focusWithTokens(1), model: undefined });
+  assert.equal(noModel.status, "blocked");
+  if (noModel.status === "blocked") {
+    assert.match(noModel.reason, /no model/);
+    assert.match(noModel.reason, /Nothing was truncated/);
+    assert.match(noModel.reason, /\/flag/);
+  }
+
+  assert.deepEqual(assessFocusAdmission({ focus: focusWithTokens(100), model: testModel(400) }), {
+    status: "ready",
+    focusTokens: 100,
+  });
+  const over = assessFocusAdmission({ focus: focusWithTokens(101), model: testModel(400) });
+  assert.equal(over.status, "blocked");
+  if (over.status === "blocked") {
+    assert.match(over.reason, /~101 tokens/);
+    assert.match(over.reason, /permits 100/);
+  }
+
+  const unchanged = focusWithTokens(20000);
+  const before = structuredClone(unchanged);
+  assert.equal(assessFocusAdmission({ focus: unchanged, model: testModel(128000) }).status, "ready");
+  assert.equal(assessFocusAdmission({ focus: unchanged, model: testModel(32000) }).status, "blocked");
+  assert.deepEqual(unchanged, before);
+});
+
+test("final assessment counts one final system prompt, expanded input, and reserve", () => {
+  const focus = serializeFocus(new Map([["entry", activeFlag("entry", 0, ["text"])]]), "session");
+  const finalSystemPrompt = appendFocus("base", focus);
+  const expandedInputTokens = 25;
+  const mandatoryTokens = estimateTextTokens(finalSystemPrompt) + expandedInputTokens + 4096;
+
+  assert.deepEqual(
+    assessFinalRequest({
+      finalSystemPrompt,
+      focus,
+      expandedInputTokens,
+      model: testModel(mandatoryTokens, 4096),
+    }),
+    { status: "ready", mandatoryTokens, focusTokens: focus.estimatedTokens },
+  );
+  const blocked = assessFinalRequest({
+    finalSystemPrompt,
+    focus,
+    expandedInputTokens,
+    model: testModel(mandatoryTokens - 1, 4096),
+  });
+  assert.equal(blocked.status, "blocked");
+  if (blocked.status === "blocked") {
+    assert.equal(blocked.mandatoryTokens, mandatoryTokens);
+    assert.match(blocked.reason, new RegExp(`~${mandatoryTokens} tokens`));
+    assert.match(blocked.reason, /Nothing was truncated/);
+  }
+});
+
+test("final assessment includes expanded images and current chained prompt changes", () => {
+  const focus = serializeFocus(new Map([["entry", activeFlag("entry", 0, ["text"])]]), "session");
+  const images = [
+    { type: "image" as const, data: "AA==", mimeType: "image/png" },
+    { type: "image" as const, data: "AA==", mimeType: "image/jpeg" },
+  ];
+  const expandedInputTokens = estimateInputTokens("look", images);
+  assert.equal(expandedInputTokens, 2401);
+
+  const shortPrompt = appendFocus("base", focus);
+  const longPrompt = appendFocus(`base${"x".repeat(400)}`, focus);
+  const model = testModel(128000, 4096);
+  const short = assessFinalRequest({ finalSystemPrompt: shortPrompt, focus, expandedInputTokens, model });
+  const long = assessFinalRequest({ finalSystemPrompt: longPrompt, focus, expandedInputTokens, model });
+  assert.ok(long.mandatoryTokens > short.mandatoryTokens);
+});
+
+test("two sequential admissions cannot double-count a stale prior effective prompt", () => {
+  const focus = serializeFocus(new Map([["entry", activeFlag("entry", 0, ["text"])]]), "session");
+  const model = testModel();
+  const staleEffectivePrompt = appendFocus("base", focus);
+
+  const firstAdmission = assessFocusAdmission({ focus, model });
+  const secondAdmission = assessFocusAdmission({ focus, model });
+  assert.deepEqual(secondAdmission, firstAdmission);
+  assert.equal(firstAdmission.status, "ready");
+
+  const final = assessFinalRequest({
+    finalSystemPrompt: staleEffectivePrompt,
+    focus,
+    expandedInputTokens: 1,
+    model,
+  });
+  assert.equal(final.mandatoryTokens, estimateTextTokens(staleEffectivePrompt) + 1 + responseReserve(model));
+});
+
+test("final assessment reports missing model without mutating focus", () => {
+  const focus = focusWithTokens(10);
+  const before = structuredClone(focus);
+  const result = assessFinalRequest({
+    finalSystemPrompt: "system",
+    focus,
+    expandedInputTokens: 3,
+    model: undefined,
+  });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.mandatoryTokens, estimateTextTokens("system") + 3);
+  if (result.status === "blocked") assert.match(result.reason, /no model/);
+  assert.deepEqual(focus, before);
 });

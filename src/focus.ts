@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { ActiveFlag } from "./state.ts";
 
@@ -11,11 +12,21 @@ export type PiFlagObservationV1 = {
   assistantStopReason?: "stop" | "length" | "toolUse" | "error" | "aborted";
 };
 
+export type InputImage = { type: "image"; data: string; mimeType: string };
+
 export type SerializedFocus = {
   block: string;
   sentinel: string;
   estimatedTokens: number;
 };
+
+export type FocusAdmission =
+  | { status: "ready"; focusTokens: number }
+  | { status: "blocked"; reason: string; focusTokens: number };
+
+export type FinalRequestAssessment =
+  | { status: "ready"; mandatoryTokens: number; focusTokens: number }
+  | { status: "blocked"; reason: string; mandatoryTokens: number; focusTokens: number };
 
 export type FocusIntegrity =
   | { status: "ready" }
@@ -33,6 +44,80 @@ const BLOCK_INTRO = [
 
 export function estimateTextTokens(text: string): number {
   return estimateTokens({ role: "user", content: text, timestamp: 0 });
+}
+
+export function estimateInputTokens(text: string, images: readonly InputImage[] | undefined): number {
+  if (!images || images.length === 0) return estimateTextTokens(text);
+  return estimateTokens({
+    role: "user",
+    content: [{ type: "text", text }, ...images.map((image) => ({ ...image }))],
+    timestamp: 0,
+  });
+}
+
+export function focusLimit(contextWindow: number): number {
+  return Math.min(32768, Math.floor(contextWindow / 4));
+}
+
+export function responseReserve(model: Model<Api>): number {
+  return Math.max(4096, Math.min(16384, model.maxTokens));
+}
+
+export function assessFocusAdmission({
+  focus,
+  model,
+}: {
+  focus: SerializedFocus;
+  model: Model<Api> | undefined;
+}): FocusAdmission {
+  const focusTokens = focus.estimatedTokens;
+  if (focus.block.length === 0) return { status: "ready", focusTokens };
+  if (!model) {
+    return {
+      status: "blocked",
+      reason: "Cannot send pi-flag content because no model is selected. Nothing was truncated. Select a model or open /flag to unflag entries.",
+      focusTokens,
+    };
+  }
+  const limit = focusLimit(model.contextWindow);
+  if (focusTokens <= limit) return { status: "ready", focusTokens };
+  return {
+    status: "blocked",
+    reason: `Cannot send without dropping pi-flag content. Focus requires ~${focusTokens} tokens; this model permits ${limit}. Nothing was truncated. Open /flag to unflag an entry or select a larger model.`,
+    focusTokens,
+  };
+}
+
+export function assessFinalRequest({
+  finalSystemPrompt,
+  focus,
+  expandedInputTokens,
+  model,
+}: {
+  finalSystemPrompt: string;
+  focus: SerializedFocus;
+  expandedInputTokens: number;
+  model: Model<Api> | undefined;
+}): FinalRequestAssessment {
+  const promptAndInputTokens = estimateTextTokens(finalSystemPrompt) + expandedInputTokens;
+  if (!model) {
+    return {
+      status: "blocked",
+      reason: "Cannot assess the pi-flag request because no model is selected. Nothing was truncated. Select a model or open /flag to unflag entries.",
+      mandatoryTokens: promptAndInputTokens,
+      focusTokens: focus.estimatedTokens,
+    };
+  }
+  const mandatoryTokens = promptAndInputTokens + responseReserve(model);
+  if (mandatoryTokens <= model.contextWindow) {
+    return { status: "ready", mandatoryTokens, focusTokens: focus.estimatedTokens };
+  }
+  return {
+    status: "blocked",
+    reason: `Cannot send without dropping pi-flag content. System prompt, current input, and response reserve require ~${mandatoryTokens} tokens; this model permits ${model.contextWindow}. Nothing was truncated. Open /flag to unflag an entry or select a larger model.`,
+    mandatoryTokens,
+    focusTokens: focus.estimatedTokens,
+  };
 }
 
 export function serializeFocus(activeFlags: ReadonlyMap<string, ActiveFlag>, sessionId: string): SerializedFocus {
