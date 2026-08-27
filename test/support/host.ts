@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
+  type CreateAgentSessionOptions,
   DefaultResourceLoader,
   type AgentSession,
   type InlineExtension,
@@ -32,6 +33,8 @@ export type TestHost = {
 export type TestHostOptions = {
   faux?: RegisterFauxProviderOptions;
   extensionPaths?: string[];
+  settings?: Parameters<typeof SettingsManager.inMemory>[0];
+  tools?: CreateAgentSessionOptions["tools"];
 };
 
 export async function createTestHost(
@@ -40,7 +43,7 @@ export async function createTestHost(
 ): Promise<TestHost> {
   const root = mkdtempSync(join(tmpdir(), "pi-flag-test-"));
   const agentDir = join(root, "agent");
-  const settingsManager = SettingsManager.inMemory();
+  const settingsManager = SettingsManager.inMemory(options.settings);
   const resourceLoader = new DefaultResourceLoader({
     cwd: root,
     agentDir,
@@ -73,7 +76,7 @@ export async function createTestHost(
     resourceLoader,
     sessionManager,
     settingsManager,
-    tools: [],
+    tools: options.tools ?? [],
   });
 
   return {

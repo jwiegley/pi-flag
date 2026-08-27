@@ -146,15 +146,18 @@ Exact one-block, stale-prompt, capacity, abort-boundary, and privacy tests pass.
 ]
 #+end_src
 
-* TODO [#B] 5.1 Add compaction and continuation integration    :implementation:
+* DONE [#B] 5.1 Add compaction and continuation integration    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.11
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 16:50]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 16:50]
+:CLOSE_REASON: Repeated compaction, tool continuation, exact prompt persistence, cache accounting, and unflag integration verified.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -196,6 +199,20 @@ Compaction/continuation/cache tests pass with exact prompts.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 26,
+    "issue_id": "flag-3ph.11",
+    "author": "pi",
+    "text": "Task 5.1 evidence:\n\n- Added public AgentSession/faux integration for two real manual compactions using deterministic extension-provided summaries. The unique flagged source disappears from ordinary `session.messages`, remains in the full session log, and the three captured pre/post-compaction system prompts contain one byte-identical block with the exact JSON-escaped source. Two compaction entries persist.\n- Added real built-in `read` tool continuation: faux emits text + tool call, Pi executes the temp-file read, and both provider calls receive one identical focus block.\n- Added six-turn faux cache test: first write, unchanged reuse, add, remove, reflag/reorder, and empty focus. Every `cacheRead`/`cacheWrite` equals faux’s exact `ceil(commonPrefixChars/4)` accounting; base prefix survives every focus suffix change; unchanged systems are byte-identical; final unflag removes the block.\n- Final-capacity failure keeps the exact marker records unchanged and consumes no faux response.\n- All tests use in-memory/temp state, native faux provider, and no real auth/network.\n\nChecks: focused extension tests 24/24 pass; typecheck pass; full `npm run check` passes all 67 discovered tests including support/fixture modules; pack surface valid.\n",
+    "created_at": "2026-08-27T23:50:24Z"
   }
 ]
 #+end_src

@@ -3,7 +3,14 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import {
+  type Context,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxText,
+  fauxToolCall,
+  type Message,
+} from "@earendil-works/pi-ai";
 import type {
   Extension,
   ExtensionCommandContext,
@@ -165,6 +172,48 @@ function focusForHost(host: TestHost) {
 
 function countOccurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
+}
+
+function fauxContentText(content: Extract<Message, { role: "user" | "toolResult" }>["content"]): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((block) => (block.type === "text" ? block.text : `[image:${block.mimeType}:${block.data.length}]`))
+    .join("\n");
+}
+
+function fauxMessageText(message: Message): string {
+  if (message.role === "user") return fauxContentText(message.content);
+  if (message.role === "assistant") {
+    return message.content
+      .map((block) => {
+        if (block.type === "text") return block.text;
+        if (block.type === "thinking") return block.thinking;
+        return `${block.name}:${JSON.stringify(block.arguments)}`;
+      })
+      .join("\n");
+  }
+  return [message.toolName, ...message.content.map((block) => fauxContentText([block]))].join("\n");
+}
+
+function serializeFauxContext(context: Context): string {
+  const parts: string[] = [];
+  if (context.systemPrompt) parts.push(`system:${context.systemPrompt}`);
+  for (const message of context.messages) parts.push(`${message.role}:${fauxMessageText(message)}`);
+  if (context.tools?.length) parts.push(`tools:${JSON.stringify(context.tools)}`);
+  return parts.join("\n\n");
+}
+
+function commonPrefixLength(left: string, right: string): number {
+  const length = Math.min(left.length, right.length);
+  let index = 0;
+  while (index < length && left[index] === right[index]) index++;
+  return index;
+}
+
+function latestAssistant(host: TestHost) {
+  const message = [...host.session.messages].reverse().find((candidate) => candidate.role === "assistant");
+  assert.ok(message?.role === "assistant");
+  return message;
 }
 
 test("loads the package and dispatches a public extension event", async () => {
@@ -570,6 +619,10 @@ test("final capacity aborts visibly with one block and unchanged context message
   );
   const ui = createUiHarness();
   appendFlaggedUser(host, "small focus");
+  const recordsBefore = host.sessionManager
+    .getEntries()
+    .filter((entry): entry is CustomSessionEntry => entry.type === "custom" && entry.customType === FLAG_RECORD_TYPE)
+    .map((entry) => structuredClone(entry));
   host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
   try {
     await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
@@ -582,6 +635,10 @@ test("final capacity aborts visibly with one block and unchanged context message
     assert.ok(Array.isArray(capturedMessages));
     assert.equal(capturedMessages.length, 1);
     assert.ok(ui.notifications.some(({ message, type }) => message.includes("Nothing was truncated") && type === "error"));
+    const recordsAfter = host.sessionManager
+      .getEntries()
+      .filter((entry): entry is CustomSessionEntry => entry.type === "custom" && entry.customType === FLAG_RECORD_TYPE);
+    assert.deepEqual(recordsAfter, recordsBefore);
 
     await runFlag(host, commandContext(host, ui.ui));
     assert.equal(ui.components.length, 1);
@@ -806,6 +863,222 @@ test("overflow compaction failure gives active-flag recovery guidance without co
     assert.match(notification?.message ?? "", /Nothing was truncated/);
     assert.match(notification?.message ?? "", /\/flag/);
     assert.doesNotMatch(notification?.message ?? "", /PRIVATE FLAG CONTENT/);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("preserves the exact focus block through two real manual compactions", async () => {
+  let summaryIndex = 0;
+  const host = await createTestHost(
+    [
+      {
+        name: "deterministic-compaction",
+        factory(pi) {
+          pi.on("session_before_compact", (event) => ({
+            compaction: {
+              summary: `summary-${++summaryIndex}`,
+              firstKeptEntryId: event.preparation.firstKeptEntryId,
+              tokensBefore: event.preparation.tokensBefore,
+              details: { source: "test" },
+            },
+          }));
+        },
+      },
+    ],
+    { settings: { compaction: { keepRecentTokens: 1 } } },
+  );
+  const ui = createUiHarness();
+  const capturedPrompts: string[] = [];
+  host.faux.setResponses([
+    fauxAssistantMessage("source response"),
+    fauxAssistantMessage("filler response"),
+    (context) => {
+      capturedPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("before compact response");
+    },
+    (context) => {
+      capturedPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("after compact response");
+    },
+    fauxAssistantMessage("second filler response"),
+    (context) => {
+      capturedPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("after second compact response");
+    },
+  ]);
+  const sourceText = "UNIQUE FLAGGED SOURCE <tag>\n  exact whitespace 🙂中\uD800";
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt(sourceText);
+    const sourceEntry = host.sessionManager
+      .getEntries()
+      .find((entry) => entry.type === "message" && entry.message.role === "user");
+    assert.ok(sourceEntry?.type === "message");
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId: host.sessionManager.getSessionId(),
+      targetEntryId: sourceEntry.id,
+      active: true,
+    });
+    await host.session.reload();
+
+    await host.session.prompt("filler before compact");
+    await host.session.prompt("capture before compact");
+    await host.session.compact();
+    await host.session.prompt("capture after compact");
+    await host.session.prompt("filler before second compact");
+    await host.session.compact();
+    await host.session.prompt("capture after second compact");
+
+    const focus = focusForHost(host);
+    assert.equal(capturedPrompts.length, 3);
+    assert.ok(capturedPrompts.every((prompt) => countOccurrences(prompt, focus.block) === 1));
+    assert.equal(capturedPrompts[0], capturedPrompts[1]);
+    assert.equal(capturedPrompts[1], capturedPrompts[2]);
+    assert.ok(capturedPrompts.every((prompt) => prompt.includes(JSON.stringify(sourceText))));
+    assert.equal(host.sessionManager.getEntry(sourceEntry.id)?.id, sourceEntry.id);
+    assert.equal(JSON.stringify(host.session.messages).includes(sourceText), false);
+    assert.equal(host.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length, 2);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("keeps one identical focus block through a tool-call continuation", async () => {
+  const host = await createTestHost([], { tools: ["read"] });
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "tool continuation focus");
+  const file = join(host.root, "tool-input.txt");
+  writeFileSync(file, "tool output");
+  const prompts: string[] = [];
+  host.faux.setResponses([
+    (context) => {
+      prompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage(
+        [fauxText("checking"), fauxToolCall("read", { path: file }, { id: "read-1" })],
+        { stopReason: "toolUse" },
+      );
+    },
+    (context) => {
+      prompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("done");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("use the tool");
+    const focus = focusForHost(host);
+    assert.equal(host.faux.state.callCount, 2);
+    assert.deepEqual(prompts, [prompts[0], prompts[0]]);
+    assert.equal(countOccurrences(prompts[0] ?? "", focus.block), 1);
+    assert.ok(host.session.messages.some((message) => message.role === "toolResult"));
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("faux cache accounting follows stable prefix and flag suffix invalidation", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const firstId = host.sessionManager.appendMessage({ role: "user", content: "first flag", timestamp: 1 });
+  const secondId = host.sessionManager.appendMessage({ role: "user", content: "second flag", timestamp: 2 });
+  const sessionId = host.sessionManager.getSessionId();
+  host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    version: 1,
+    sessionId,
+    targetEntryId: firstId,
+    active: true,
+  });
+  const contexts: Context[] = [];
+  const responses = Array.from({ length: 6 }, (_, index) => (context: Context) => {
+    contexts.push(structuredClone(context));
+    return fauxAssistantMessage(`response-${index}`);
+  });
+  host.faux.setResponses(responses);
+  const usages: Array<ReturnType<typeof latestAssistant>["usage"]> = [];
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+
+    await host.session.prompt("turn-1");
+    usages.push(latestAssistant(host).usage);
+    await host.session.prompt("turn-2");
+    usages.push(latestAssistant(host).usage);
+
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId,
+      targetEntryId: secondId,
+      active: true,
+    });
+    await host.session.reload();
+    await host.session.prompt("turn-3-add");
+    usages.push(latestAssistant(host).usage);
+
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId,
+      targetEntryId: firstId,
+      active: false,
+    });
+    await host.session.reload();
+    await host.session.prompt("turn-4-remove");
+    usages.push(latestAssistant(host).usage);
+
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId,
+      targetEntryId: firstId,
+      active: true,
+    });
+    await host.session.reload();
+    await host.session.prompt("turn-5-reflag");
+    usages.push(latestAssistant(host).usage);
+
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId,
+      targetEntryId: firstId,
+      active: false,
+    });
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId,
+      targetEntryId: secondId,
+      active: false,
+    });
+    await host.session.reload();
+    await host.session.prompt("turn-6-empty");
+    usages.push(latestAssistant(host).usage);
+
+    assert.equal(contexts.length, 6);
+    assert.equal(usages.length, 6);
+    const serialized = contexts.map(serializeFauxContext);
+    for (let index = 0; index < serialized.length; index++) {
+      const previous = serialized[index - 1];
+      const current = serialized[index] ?? "";
+      const prefixLength = previous === undefined ? 0 : commonPrefixLength(previous, current);
+      const expectedRead = previous === undefined ? 0 : Math.ceil(prefixLength / 4);
+      const expectedWrite = Math.ceil(current.slice(prefixLength).length / 4);
+      assert.equal(usages[index]?.cacheRead, expectedRead, `cacheRead turn ${index + 1}`);
+      assert.equal(usages[index]?.cacheWrite, expectedWrite, `cacheWrite turn ${index + 1}`);
+    }
+
+    const systems = contexts.map((context) => context.systemPrompt ?? "");
+    assert.equal(systems[0], systems[1]);
+    const blockStart = systems[0]?.indexOf("\n\n## pi-flag: significant session observations") ?? -1;
+    assert.ok(blockStart > 0);
+    const basePrompt = systems[0]?.slice(0, blockStart) ?? "";
+    for (const system of systems.slice(2)) assert.ok(system.startsWith(basePrompt));
+    for (const system of systems.slice(0, 5)) assert.equal(countOccurrences(system, "<!-- pi-flag:v1:sha256:"), 1);
+    assert.equal(countOccurrences(systems[5] ?? "", "<!-- pi-flag:v1:sha256:"), 0);
+    assert.notEqual(systems[1], systems[2]);
+    assert.notEqual(systems[2], systems[3]);
+    assert.notEqual(systems[3], systems[4]);
+    assert.ok((systems[4]?.indexOf(secondId) ?? -1) < (systems[4]?.indexOf(firstId) ?? -1));
+    assert.equal(usages[0]?.cacheRead, 0);
+    assert.ok((usages[0]?.cacheWrite ?? 0) > 0);
+    assert.ok((usages[1]?.cacheRead ?? 0) > 0);
   } finally {
     host.cleanup();
   }
