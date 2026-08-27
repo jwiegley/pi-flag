@@ -125,10 +125,19 @@ test("dry-run tarball contains only the approved package surface", () => {
   assert.ok(Array.isArray(files));
   const paths = files.map((file) => {
     assert.ok(isRecord(file));
-    assert.equal(typeof file.path, "string");
-    return file.path;
+    const path = file.path;
+    assert.equal(typeof path, "string");
+    return String(path);
   });
-  assert.deepEqual(paths.sort(), ["README.md", "index.ts", "package.json"]);
+  for (const required of ["README.md", "index.ts", "package.json"] as const) {
+    assert.equal(paths.includes(required), true, `${required} must be packed`);
+  }
+  for (const path of paths) {
+    assert.ok(
+      path === "README.md" || path === "index.ts" || path === "package.json" || /^src\/[^/]+\.ts$/.test(path),
+      `${path} is outside the approved package surface`,
+    );
+  }
   for (const forbidden of ["PLAN.org", "AGENTS.md", "package-lock.json", "test/package.test.ts"] as const) {
     assert.equal(paths.includes(forbidden), false);
   }

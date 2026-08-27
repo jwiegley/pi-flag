@@ -425,15 +425,18 @@ Public exported APIs load the extension with faux provider and isolated state.
 ]
 #+end_src
 
-* TODO [#B] 1.1 Implement V1 record parser and replay reducer    :implementation:
+* DONE [#B] 1.1 Implement V1 record parser and replay reducer    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.3
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:23]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:23]
+:CLOSE_REASON: Pure strict V1 parser and deterministic current-session reducer implemented with blocker diagnostics.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -466,6 +469,20 @@ Focused state tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 18,
+    "issue_id": "flag-3ph.3",
+    "author": "pi",
+    "text": "Task 1.1 evidence:\n\n- Added pure `src/state.ts` V1 parser/reducer and domain types.\n- Exact-key `unknown` validation rejects primitive/null/array/missing/extra/future records.\n- Full-log replay ignores foreign sessions and unrelated custom records, preserves first activation on duplicate active records, treats inactive absence as no-op, and reinserts reactivated targets newest.\n- Malformed warning order and activation order are deterministic.\n- Active missing/ineligible sources produce recovery diagnostics with record and target IDs; no invented active state.\n- No module-global mutable state or I/O.\n\nChecks: focused state test 6/6 pass; typecheck pass; full `npm run check` 11/11 pass and pack surface valid.\n",
+    "created_at": "2026-08-27T22:23:20Z"
   }
 ]
 #+end_src
