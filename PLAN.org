@@ -2,15 +2,17 @@
 #+SEQ_TODO: TODO DOING DRAFT WAIT DEFER NOTE | DONE CANCELED
 #+ISSUE_PREFIX: flag-implementation-plan
 
-* TODO [#B] Produce comprehensive pi-flag implementation plan    :planning:research:
+* DONE [#B] Produce comprehensive pi-flag implementation plan    :planning:research:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-implementation-plan-n3z
 :LABELS:   ["planning","research"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:18]
+:MODIFIED: [2026-08-27 Thu 13:44]
 :CREATED_BY: johnw
+:FINISHED: [2026-08-27 Thu 13:44]
+:CLOSE_REASON: Completed: comprehensive pi-flag implementation plan researched, source-mapped, architected, written, and audited for user review.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -368,15 +370,18 @@ pi-flag-implementation-plan.md is complete enough to execute without rediscoveri
 ]
 #+end_src
 
-* TODO [#B] Audit and deliver pi-flag implementation plan    :planning:review:
+* DONE [#B] Audit and deliver pi-flag implementation plan    :planning:review:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-implementation-plan-n3z.6
 :LABELS:   ["planning","review"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:18]
+:MODIFIED: [2026-08-27 Thu 13:44]
+:ASSIGNEE: pi
 :CREATED_BY: johnw
+:FINISHED: [2026-08-27 Thu 13:44]
+:CLOSE_REASON: Completed: plan structure, source/research/scenario coverage, task contracts, risks, constraints, and no-implementation state audited; final baseline hash inserted after planning closure commit.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -415,6 +420,20 @@ Plan passes completeness audit and is ready for user review.
     "created_by": "johnw",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 6,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Pre-closure plan audit:\n\n- Markdown fences balanced.\n- 15 atomic tasks found.\n- Every task has predecessor, exact files, exact checks/commands, acceptance evidence, and rollback/review boundary.\n- Required scenarios, source map, primary-source bibliography, risks, open decisions, security/privacy checklist, and requirement coverage present.\n- No obsolete `/significant` naming, core-change requirement, implementation files, or Pi source diff.\n- Correction: prior task-5 OBR comment said 13 tasks; final plan contains 15 atomic tasks.\n- Sole remaining placeholder is `<implementation-base>` in final diff command. It will be replaced by the exact planning-closure commit immediately after this OBR graph is closed and committed, then the structural audit will rerun. Any failure reopens this issue.",
+    "created_at": "2026-08-27T20:44:03Z"
   }
 ]
 #+end_src
