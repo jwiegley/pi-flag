@@ -9,10 +9,10 @@
 :LABELS:   ["planning","research"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:51]
+:MODIFIED: [2026-08-27 Thu 14:03]
 :CREATED_BY: johnw
-:FINISHED: [2026-08-27 Thu 13:51]
-:CLOSE_REASON: Completed after audit fixes: implementation plan is source-grounded, complete, and ready for user review.
+:FINISHED: [2026-08-27 Thu 14:03]
+:CLOSE_REASON: Completed after second audit: pi-flag implementation plan is comprehensive and ready for review.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -40,6 +40,13 @@ Reviewed Markdown plan covers source evidence, prior art, package architecture, 
     "author": "pi",
     "text": "Reopened: Independent goal audit found five plan-completion gaps; reopen review to document user-authorized scope amendment and add provider-change, cross-platform, completion-evidence, and undefined-safe session-file requirements.",
     "created_at": "2026-08-27T20:48:27Z"
+  },
+  {
+    "id": 10,
+    "issue_id": "flag-implementation-plan-n3z",
+    "author": "pi",
+    "text": "Reopened: Independent audit found missing source citations and semantic gaps in stop reasons, actual pi install smoke, peer compatibility, and extension ordering.",
+    "created_at": "2026-08-27T20:55:16Z"
   }
 ]
 #+end_src
@@ -391,11 +398,11 @@ pi-flag-implementation-plan.md is complete enough to execute without rediscoveri
 :LABELS:   ["planning","review"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:51]
+:MODIFIED: [2026-08-27 Thu 14:03]
 :ASSIGNEE: pi
 :CREATED_BY: johnw
-:FINISHED: [2026-08-27 Thu 13:51]
-:CLOSE_REASON: Completed after independent audit: documented scope amendment and added provider-change, cross-platform, completion-evidence, and undefined-safe path requirements.
+:FINISHED: [2026-08-27 Thu 14:03]
+:CLOSE_REASON: Completed second audit fixes: added source citations and exact stop, install, compatibility, and middleware-order contracts/tests.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -462,6 +469,20 @@ Plan passes completeness audit and is ready for user review.
     "author": "pi",
     "text": "Independent audit findings addressed:\n\n1. Scope boundary: plan now records the user’s explicit post-confirmation authorization to create `~/src/pi-flag`, initialize Git/OBR, create AGENTS.md/PLAN.org, and commit planning state. It distinguishes those authorized planning artifacts from still-prohibited production work.\n2. Provider privacy: `model_select` contract, Task 4.2 implementation/tests, README task, source-map row, security coverage, and test cases now require a content-free warning when active flags cross providers; same-provider/no-flag cases must not warn.\n3. Cross-platform terminals: Task 6.2 now has an explicit macOS legacy/Kitty, Linux legacy/Kitty, Windows Terminal PowerShell, WSL, and tmux matrix, with automated representative input tests and unverified-platform release blocking.\n4. Completion evidence: section 17 now records actual no-implementation/no-Pi-source-diff/OBR/repository checks rather than only planning a future implementation audit.\n5. Undefined safety: durability contract now requires `const sessionFile = getSessionFile(); const durable = sessionFile !== undefined && existsSync(sessionFile);`, with tests for undefined, absent, and existing paths.\n\nPlan fences remain balanced; obsolete unsafe `existsSync(getSessionFile())` form is absent. Final planning baseline hash will be updated after this reopened audit issue and epic are reclosed and committed.",
     "created_at": "2026-08-27T20:51:06Z"
+  },
+  {
+    "id": 11,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Reopened: Independent audit found missing source citations and semantic gaps in stop reasons, actual pi install smoke, peer compatibility, and extension ordering.",
+    "created_at": "2026-08-27T20:55:16Z"
+  },
+  {
+    "id": 12,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Second independent audit findings addressed:\n\n1. Added local range citations for the public faux-provider harness (`fauxProvider`, ModelRuntime, ResourceLoader, SettingsManager, SessionManager, SDK), KeybindingsManager/Input behavior, all StopReason values and persistence/display, package install/resolution, isolated config, RPC command discovery, and extension middleware ordering.\n2. Defined exact assistant eligibility for all seven StopReason values: pending/deferred reject; stop/length/toolUse/error/aborted require visible text; errorMessage is never projected; length/aborted provenance retained.\n3. Replaced install-directory-only smoke with actual isolated `PI_CODING_AGENT_DIR` `pi install` + `pi list` + RPC `get_commands` for both source package and packed-tarball-installed directory.\n4. Added exact peerDependencies/peerDependenciesMeta/devDependencies JSON and exact supported range `>=0.84.3 <0.85.0`, tested baseline 0.84.3, plus README/package tests.\n5. Fully specified extension ordering: earlier input transforms are assessed; later input growth may only cause visible aggregate overflow; cooperative before-agent handlers preserve a SHA-256 sentinel; destructive later system-prompt replacement is detected by a context-time integrity guard that aborts without mutating messages; post-context provider payload mutation remains the explicit trusted-extension boundary. Added ordering tests and direct-custom-trigger safe abort behavior.\n\nNo production files or Pi source files changed.",
+    "created_at": "2026-08-27T21:03:27Z"
   }
 ]
 #+end_src
