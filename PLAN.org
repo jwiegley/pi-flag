@@ -1,0 +1,294 @@
+#+TITLE: Obr Issues
+#+SEQ_TODO: TODO DOING DRAFT WAIT DEFER NOTE | DONE CANCELED
+#+ISSUE_PREFIX: flag-implementation-plan
+
+* TODO [#B] Produce comprehensive pi-flag implementation plan    :planning:research:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z
+:LABELS:   ["planning","research"]
+:ISSUE_TYPE: epic
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Research and produce a complete, source-grounded implementation plan for the standalone pi-flag extension without implementing production code.
+
+** Acceptance Criteria
+
+Reviewed Markdown plan covers source evidence, prior art, package architecture, ordered implementation tasks, verification, risks, and requirement coverage.
+
+* TODO [#B] Revalidate revised pi-flag design against current Pi source    :planning:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z.1
+:LABELS:   ["planning","source-review"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Audit the approved extension-only design against current Pi source and record all deltas or contradictions.
+
+** Acceptance Criteria
+
+Source-cited design review confirms extension-only feasibility or records a blocker requiring user decision.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-implementation-plan-n3z.1",
+    "depends_on_id": "flag-implementation-plan-n3z",
+    "type": "parent-child",
+    "created_at": "2026-08-27T20:14:48.478633Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] Map standalone extension packaging and Pi integration surfaces    :packaging:planning:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z.2
+:LABELS:   ["packaging","planning"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Verify package loading, custom TUI, lifecycle, persistence, prompt, test, and standalone distribution surfaces.
+
+** Acceptance Criteria
+
+Exact source paths and symbols support a selected minimal standalone package layout.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-implementation-plan-n3z.2",
+    "depends_on_id": "flag-implementation-plan-n3z",
+    "type": "parent-child",
+    "created_at": "2026-08-27T20:14:48.583367Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-implementation-plan-n3z.2",
+    "depends_on_id": "flag-implementation-plan-n3z.1",
+    "type": "blocks",
+    "created_at": "2026-08-27T20:14:49.146544Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] Research prior art and TypeScript extension hygiene    :research:typescript:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z.3
+:LABELS:   ["research","typescript"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Research primary sources for pinned context, plugin state, filterable terminal UI, TypeScript, npm packaging, security, and Pi extension practices.
+
+** Acceptance Criteria
+
+Bibliography records access dates, concrete lessons, applicability limits, and design implications.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-implementation-plan-n3z.3",
+    "depends_on_id": "flag-implementation-plan-n3z",
+    "type": "parent-child",
+    "created_at": "2026-08-27T20:14:48.686830Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-implementation-plan-n3z.3",
+    "depends_on_id": "flag-implementation-plan-n3z.1",
+    "type": "blocks",
+    "created_at": "2026-08-27T20:14:49.296153Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] Resolve pi-flag architecture and verification design    :architecture:planning:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z.4
+:LABELS:   ["architecture","planning"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Select minimal package shape and specify selector, state reducer, prompt projection, capacity gate, lifecycle, failures, privacy, and tests.
+
+** Acceptance Criteria
+
+All required scenarios have a coherent extension-only design and focused verification contract.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-implementation-plan-n3z.4",
+    "depends_on_id": "flag-implementation-plan-n3z",
+    "type": "parent-child",
+    "created_at": "2026-08-27T20:14:48.804282Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-implementation-plan-n3z.4",
+    "depends_on_id": "flag-implementation-plan-n3z.2",
+    "type": "blocks",
+    "created_at": "2026-08-27T20:14:49.447165Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-implementation-plan-n3z.4",
+    "depends_on_id": "flag-implementation-plan-n3z.3",
+    "type": "blocks",
+    "created_at": "2026-08-27T20:14:49.590534Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] Write executable pi-flag implementation plan    :documentation:planning:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z.5
+:LABELS:   ["documentation","planning"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Write ordered atomic implementation tasks with exact files, symbols, dependencies, tests, commands, evidence, and review boundaries.
+
+** Acceptance Criteria
+
+pi-flag-implementation-plan.md is complete enough to execute without rediscovering architecture.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-implementation-plan-n3z.5",
+    "depends_on_id": "flag-implementation-plan-n3z",
+    "type": "parent-child",
+    "created_at": "2026-08-27T20:14:48.908441Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-implementation-plan-n3z.5",
+    "depends_on_id": "flag-implementation-plan-n3z.4",
+    "type": "blocks",
+    "created_at": "2026-08-27T20:14:49.729880Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] Audit and deliver pi-flag implementation plan    :planning:review:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-implementation-plan-n3z.6
+:LABELS:   ["planning","review"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:14]
+:CREATED_BY: johnw
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Cross-check source claims, research, scenarios, risks, constraints, and coverage; confirm no implementation/source diff.
+
+** Acceptance Criteria
+
+Plan passes completeness audit and is ready for user review.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "depends_on_id": "flag-implementation-plan-n3z",
+    "type": "parent-child",
+    "created_at": "2026-08-27T20:14:49.015639Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "depends_on_id": "flag-implementation-plan-n3z.5",
+    "type": "blocks",
+    "created_at": "2026-08-27T20:14:49.876291Z",
+    "created_by": "johnw",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
