@@ -806,15 +806,18 @@ Multi-toggle/privacy/recovery tests pass.
 ]
 #+end_src
 
-* TODO [#B] 4.1 Wire session replay and /flag    :implementation:
+* DONE [#B] 4.1 Wire session replay and /flag    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.9
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 16:17]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 16:17]
+:CLOSE_REASON: Session replay, guarded /flag UI, durability snapshots, append-rescan, and dangling recovery wired.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -856,6 +859,20 @@ Command/lifecycle integration tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 24,
+    "issue_id": "flag-3ph.9",
+    "author": "pi",
+    "text": "Task 4.1 evidence:\n\n- `index.ts` now owns factory-local runtime state and registers only `/flag` plus session start/shutdown/manual-compaction lifecycle handlers.\n- Session start/reload performs full-log current-session replay/serialization; shutdown clears references. Factory registration itself performs no I/O or background work.\n- `/flag` requires TUI + idle + no active manual compaction; print/json/RPC and non-idle paths notify without opening UI or calling faux.\n- Snapshot includes every eligible full-log source, active-branch status, warnings, dangling recovery rows, token estimate, and undefined-safe ephemeral/not-yet-saved/durable labels.\n- Non-overlay custom selector toggles use candidate focus admission, exact typed append, synchronous rescan, persisted marker timestamp, and stable multi-toggle state. Dangling active rows remain available to tombstone.\n- Tests assert no tree command, shortcuts, tools, flags, widgets/renderers, labels, or settings surface.\n\nChecks: focused extension+selector tests 22/22 pass; typecheck pass; full `npm run check` passes all 50 discovered tests; pack surface valid; no faux provider calls in command tests.\n",
+    "created_at": "2026-08-27T23:17:41Z"
   }
 ]
 #+end_src

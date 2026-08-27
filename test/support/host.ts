@@ -18,6 +18,7 @@ export type TestHost = {
   root: string;
   faux: FauxProviderHandle;
   session: AgentSession;
+  sessionManager: SessionManager;
   extensionsResult: LoadExtensionsResult;
   cleanup(): void;
 };
@@ -48,13 +49,14 @@ export async function createTestHost(extensionFactories: InlineExtension[] = [])
   });
   modelRuntime.registerNativeProvider(faux.provider);
 
+  const sessionManager = SessionManager.inMemory(root);
   const { session, extensionsResult } = await createAgentSession({
     cwd: root,
     agentDir,
     model: faux.getModel(),
     modelRuntime,
     resourceLoader,
-    sessionManager: SessionManager.inMemory(root),
+    sessionManager,
     settingsManager,
     tools: [],
   });
@@ -63,6 +65,7 @@ export async function createTestHost(extensionFactories: InlineExtension[] = [])
     root,
     faux,
     session,
+    sessionManager,
     extensionsResult,
     cleanup() {
       session.dispose();
