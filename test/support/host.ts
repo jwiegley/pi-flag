@@ -35,13 +35,17 @@ export type TestHostOptions = {
   extensionPaths?: string[];
   settings?: Parameters<typeof SettingsManager.inMemory>[0];
   tools?: CreateAgentSessionOptions["tools"];
+  root?: string;
+  sessionManager?: SessionManager;
+  removeRootOnCleanup?: boolean;
 };
 
 export async function createTestHost(
   extensionFactories: InlineExtension[] = [],
   options: TestHostOptions = {},
 ): Promise<TestHost> {
-  const root = mkdtempSync(join(tmpdir(), "pi-flag-test-"));
+  const root = options.root ?? mkdtempSync(join(tmpdir(), "pi-flag-test-"));
+  const removeRootOnCleanup = options.removeRootOnCleanup ?? options.root === undefined;
   const agentDir = join(root, "agent");
   const settingsManager = SettingsManager.inMemory(options.settings);
   const resourceLoader = new DefaultResourceLoader({
@@ -67,7 +71,7 @@ export async function createTestHost(
   });
   modelRuntime.registerNativeProvider(faux.provider);
 
-  const sessionManager = SessionManager.inMemory(root);
+  const sessionManager = options.sessionManager ?? SessionManager.inMemory(root);
   const { session, extensionsResult } = await createAgentSession({
     cwd: root,
     agentDir,
@@ -90,7 +94,7 @@ export async function createTestHost(
     cleanup() {
       session.dispose();
       modelRuntime.unregisterProvider(faux.provider.id);
-      rmSync(root, { recursive: true, force: true });
+      if (removeRootOnCleanup) rmSync(root, { recursive: true, force: true });
     },
   };
 }

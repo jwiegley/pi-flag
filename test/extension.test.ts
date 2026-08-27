@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -11,12 +12,13 @@ import {
   fauxToolCall,
   type Message,
 } from "@earendil-works/pi-ai";
-import type {
-  Extension,
-  ExtensionCommandContext,
-  ExtensionUIContext,
-  SessionEntry,
-  Theme,
+import {
+  type Extension,
+  type ExtensionCommandContext,
+  type ExtensionUIContext,
+  type SessionEntry,
+  SessionManager,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
@@ -1081,5 +1083,218 @@ test("faux cache accounting follows stable prefix and flag suffix invalidation",
     assert.ok((usages[1]?.cacheRead ?? 0) > 0);
   } finally {
     host.cleanup();
+  }
+});
+
+test("persists flags when reopening the same session ID", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-flag-resume-"));
+  const sessionDir = join(root, "sessions");
+  let sessionFile = "";
+  let sessionId = "";
+  const sourceText = "persistent resume source 🙂";
+  try {
+    const firstManager = SessionManager.create(root, sessionDir, { id: "resume-session" });
+    const first = await createTestHost([], {
+      root,
+      sessionManager: firstManager,
+      removeRootOnCleanup: false,
+    });
+    try {
+      first.faux.setResponses([fauxAssistantMessage("source response")]);
+      await first.session.bindExtensions({ mode: "tui", uiContext: createUiHarness().ui });
+      await first.session.prompt(sourceText);
+      const sourceEntry = first.sessionManager
+        .getEntries()
+        .find((entry) => entry.type === "message" && entry.message.role === "user");
+      assert.ok(sourceEntry?.type === "message");
+      first.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+        version: 1,
+        sessionId: first.sessionManager.getSessionId(),
+        targetEntryId: sourceEntry.id,
+        active: true,
+      });
+      sessionFile = first.sessionManager.getSessionFile() ?? "";
+      sessionId = first.sessionManager.getSessionId();
+      assert.equal(existsSync(sessionFile), true);
+    } finally {
+      first.cleanup();
+    }
+
+    const reopenedManager = SessionManager.open(sessionFile, sessionDir, root);
+    const reopened = await createTestHost([], {
+      root,
+      sessionManager: reopenedManager,
+      removeRootOnCleanup: false,
+    });
+    let systemPrompt = "";
+    reopened.faux.setResponses([
+      (context) => {
+        systemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("resumed");
+      },
+    ]);
+    try {
+      await reopened.session.bindExtensions({ mode: "tui", uiContext: createUiHarness().ui });
+      await reopened.session.prompt("after resume");
+      const focus = focusForHost(reopened);
+      assert.equal(reopened.sessionManager.getSessionId(), sessionId);
+      assert.equal(countOccurrences(systemPrompt, focus.block), 1);
+      assert.match(systemPrompt, new RegExp(JSON.stringify(sourceText).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    } finally {
+      reopened.cleanup();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("labels a pre-assistant flag not-yet-saved and durable after assistant flush", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-flag-durability-"));
+  const sessionDir = join(root, "sessions");
+  const manager = SessionManager.create(root, sessionDir, { id: "durability-session" });
+  const host = await createTestHost([], { root, sessionManager: manager, removeRootOnCleanup: false });
+  const rendered: string[] = [];
+  const ui = createUiHarness((component) => {
+    rendered.push(requireFlagSelector(component).render(100).join("\n"));
+  });
+  try {
+    const sourceId = manager.appendMessage({ role: "user", content: "before assistant", timestamp: 1 });
+    manager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId: manager.getSessionId(),
+      targetEntryId: sourceId,
+      active: true,
+    });
+    const sessionFile = manager.getSessionFile();
+    assert.ok(sessionFile);
+    assert.equal(existsSync(sessionFile), false);
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await runFlag(host, commandContext(host, ui.ui, { useActualSessionFile: true }));
+    assert.match(rendered[0] ?? "", /not-yet-saved/);
+
+    manager.appendMessage(fauxAssistantMessage("first assistant"));
+    assert.equal(existsSync(sessionFile), true);
+    await runFlag(host, commandContext(host, ui.ui, { useActualSessionFile: true }));
+    assert.match(rendered[1] ?? "", /durable/);
+  } finally {
+    host.cleanup();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("projects an off-branch flag after rewinding before its marker", async () => {
+  const host = await createTestHost();
+  const manager = host.sessionManager;
+  const rootId = manager.appendMessage({ role: "user", content: "root", timestamp: 1 });
+  const offBranchId = manager.appendMessage({ role: "user", content: "OFF BRANCH SOURCE", timestamp: 2 });
+  manager.branch(rootId);
+  manager.appendMessage({ role: "user", content: "active branch", timestamp: 3 });
+  manager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    version: 1,
+    sessionId: manager.getSessionId(),
+    targetEntryId: offBranchId,
+    active: true,
+  });
+  manager.branch(rootId);
+  let systemPrompt = "";
+  const ui = createUiHarness((component) => {
+    const selector = requireFlagSelector(component);
+    const offBranch = selector.getFilteredRows().find(({ entryId }) => entryId === offBranchId);
+    assert.equal(offBranch?.active, true);
+    assert.equal(offBranch?.onActiveBranch, false);
+  });
+  host.faux.setResponses([
+    (context) => {
+      systemPrompt = context.systemPrompt ?? "";
+      return fauxAssistantMessage("active response");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("after rewind");
+    await runFlag(host, commandContext(host, ui.ui));
+    const focus = focusForHost(host);
+    assert.equal(countOccurrences(systemPrompt, focus.block), 1);
+    assert.match(systemPrompt, /OFF BRANCH SOURCE/);
+    assert.equal(manager.getBranch().some(({ id }) => id === offBranchId), false);
+    assert.equal(replayFlags(manager.getEntries(), manager.getSessionId()).active.has(offBranchId), true);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("forked session IDs ignore copied flags while imported same-ID files restore them", async () => {
+  const sourceRoot = mkdtempSync(join(tmpdir(), "pi-flag-source-session-"));
+  const forkRoot = mkdtempSync(join(tmpdir(), "pi-flag-fork-session-"));
+  const importRoot = mkdtempSync(join(tmpdir(), "pi-flag-import-session-"));
+  try {
+    const sourceDir = join(sourceRoot, "sessions");
+    const sourceManager = SessionManager.create(sourceRoot, sourceDir, { id: "source-session" });
+    const sourceId = sourceManager.appendMessage({ role: "user", content: "COPIED FLAG SOURCE", timestamp: 1 });
+    sourceManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+      version: 1,
+      sessionId: sourceManager.getSessionId(),
+      targetEntryId: sourceId,
+      active: true,
+    });
+    sourceManager.appendMessage(fauxAssistantMessage("flush source"));
+    const sourceFile = sourceManager.getSessionFile();
+    assert.ok(sourceFile && existsSync(sourceFile));
+
+    const forkDir = join(forkRoot, "sessions");
+    const forkManager = SessionManager.forkFrom(sourceFile, forkRoot, forkDir, { id: "forked-session" });
+    const forked = await createTestHost([], {
+      root: forkRoot,
+      sessionManager: forkManager,
+      removeRootOnCleanup: false,
+    });
+    let forkSystemPrompt = "";
+    forked.faux.setResponses([
+      (context) => {
+        forkSystemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("fork response");
+      },
+    ]);
+    try {
+      await forked.session.bindExtensions({ mode: "tui", uiContext: createUiHarness().ui });
+      await forked.session.prompt("fork prompt");
+      assert.equal(focusForHost(forked).block, "");
+      assert.equal(forkSystemPrompt.includes("<!-- pi-flag:v1:sha256:"), false);
+      assert.notEqual(forked.sessionManager.getSessionId(), sourceManager.getSessionId());
+    } finally {
+      forked.cleanup();
+    }
+
+    const importDir = join(importRoot, "sessions");
+    mkdirSync(importDir, { recursive: true });
+    const importedFile = join(importDir, "imported.jsonl");
+    copyFileSync(sourceFile, importedFile);
+    const importedManager = SessionManager.open(importedFile, importDir, importRoot);
+    const imported = await createTestHost([], {
+      root: importRoot,
+      sessionManager: importedManager,
+      removeRootOnCleanup: false,
+    });
+    let importedSystemPrompt = "";
+    imported.faux.setResponses([
+      (context) => {
+        importedSystemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("import response");
+      },
+    ]);
+    try {
+      await imported.session.bindExtensions({ mode: "tui", uiContext: createUiHarness().ui });
+      await imported.session.prompt("import prompt");
+      const focus = focusForHost(imported);
+      assert.equal(imported.sessionManager.getSessionId(), sourceManager.getSessionId());
+      assert.equal(countOccurrences(importedSystemPrompt, focus.block), 1);
+      assert.match(importedSystemPrompt, /COPIED FLAG SOURCE/);
+    } finally {
+      imported.cleanup();
+    }
+  } finally {
+    rmSync(sourceRoot, { recursive: true, force: true });
+    rmSync(forkRoot, { recursive: true, force: true });
+    rmSync(importRoot, { recursive: true, force: true });
   }
 });

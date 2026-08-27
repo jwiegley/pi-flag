@@ -217,15 +217,18 @@ Compaction/continuation/cache tests pass with exact prompts.
 ]
 #+end_src
 
-* TODO [#B] 5.2 Add resume/fork/branch integration    :implementation:
+* DONE [#B] 5.2 Add resume/fork/branch integration    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.12
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 16:58]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 16:58]
+:CLOSE_REASON: Persistent resume, durability transition, off-branch rewind, fork isolation, and same-ID import verified.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -258,6 +261,20 @@ Resume/fork/branch/rewind/corruption tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 27,
+    "issue_id": "flag-3ph.12",
+    "author": "pi",
+    "text": "Task 5.2 evidence:\n\n- Persistent `SessionManager.create` session writes source/marker, closes, reopens the same JSONL/header ID, and restores one exact focus block containing the original text.\n- Pre-assistant user+flag entries have a named but absent session file and selector label `not-yet-saved`; appending the first assistant flushes the file and changes the label to `durable`.\n- Full-log replay projects a flagged source from an abandoned branch after rewinding the active leaf before the marker; selector reports it active/off-branch while active branch excludes it.\n- `SessionManager.forkFrom` copies history/records under a new ID and produces no pi-flag block. A copied/imported file retaining the source header ID restores the flag and exact text.\n- Existing dangling-record integration blocks ordinary input and tombstones through `/flag`.\n- All persistent files, copied sessions, agent dirs, and roots are isolated under test temp directories and removed; no user config/session path is touched.\n\nChecks: focused extension tests 28/28 pass; typecheck pass; full `npm run check` passes all 71 discovered tests including support/fixture modules; pack surface valid.\n",
+    "created_at": "2026-08-27T23:58:44Z"
   }
 ]
 #+end_src
