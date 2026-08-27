@@ -71,6 +71,7 @@ function createSelector(
   options: {
     rows?: number;
     keybindings?: KeybindingsManager;
+    needsPrivacyConsent?: boolean;
     onToggle?: FlagSelectorOptions["onToggle"];
     onClose?: () => void;
   } = {},
@@ -84,6 +85,7 @@ function createSelector(
     theme: plainTheme,
     keybindings,
     snapshot: initialSnapshot,
+    needsPrivacyConsent: options.needsPrivacyConsent ?? false,
     onToggle:
       options.onToggle ??
       (async (entryId, nextActive) => {
@@ -304,4 +306,197 @@ test("shows a bounded no-match state and still honors cancel", () => {
   assert.ok(lines.some((line) => line.includes("No matching")));
   selector.handleInput("\x1b");
   assert.equal(closes, 1);
+});
+
+test("requires inline privacy consent only before the first activation", async () => {
+  const initial = snapshot([row("entry", "2026-01-01T00:00:01.000Z", "sensitive text")]);
+  const toggles: Array<{ entryId: string; active: boolean }> = [];
+  let closes = 0;
+  const { selector } = createSelector(initial, {
+    needsPrivacyConsent: true,
+    onToggle: async (entryId, active) => {
+      toggles.push({ entryId, active });
+      return { ...initial, rows: initial.rows.map((item) => ({ ...item, active })) };
+    },
+    onClose: () => {
+      closes++;
+    },
+  });
+
+  selector.handleInput("\r");
+  assert.deepEqual(toggles, []);
+  const privacy = selector.render(100).map(stripTerminalSequences).join("\n");
+  assert.match(privacy, /privacy confirmation/);
+  assert.match(privacy, /resends flagged text in full/);
+  assert.match(privacy, /provider changes/);
+  assert.match(privacy, /does not erase\s+session history or prior provider requests/);
+
+  selector.handleInput("\x1b");
+  assert.deepEqual(toggles, []);
+  assert.equal(closes, 0);
+  assert.doesNotMatch(selector.render(100).map(stripTerminalSequences).join("\n"), /resends flagged text in full/);
+
+  selector.handleInput("\r");
+  selector.handleInput("\r");
+  await nextTurn();
+  assert.deepEqual(toggles, [{ entryId: "entry", active: true }]);
+  assert.equal(selector.getSelectedEntryId(), "entry");
+  assert.ok(selector.render(100).map(stripTerminalSequences).some((line) => line.includes("[flagged]")));
+
+  selector.handleInput("\x1b");
+  assert.equal(closes, 1);
+});
+
+test("keeps a single pending toggle selected and ignores duplicate actions", async () => {
+  const initial = snapshot([
+    row("new", "2026-01-01T00:00:02.000Z", "new"),
+    row("old", "2026-01-01T00:00:01.000Z", "old"),
+  ]);
+  let calls = 0;
+  let resolveToggle: ((value: FlagSelectorSnapshot) => void) | undefined;
+  const pending = new Promise<FlagSelectorSnapshot>((resolve) => {
+    resolveToggle = resolve;
+  });
+  const { selector } = createSelector(initial, {
+    onToggle: async () => {
+      calls++;
+      return pending;
+    },
+  });
+
+  selector.handleInput("\r");
+  assert.equal(calls, 1);
+  assert.equal(selector.getSelectedEntryId(), "new");
+  assert.ok(selector.render(100).map(stripTerminalSequences).some((line) => line.includes("[pending]")));
+  selector.handleInput("\r");
+  selector.handleInput("\x1b[B");
+  selector.handleInput("x");
+  assert.equal(calls, 1);
+  assert.equal(selector.getSelectedEntryId(), "new");
+  assert.equal(selector.getQuery(), "");
+
+  assert.ok(resolveToggle);
+  resolveToggle({ ...initial, rows: initial.rows.map((item) => (item.entryId === "new" ? { ...item, active: true } : item)) });
+  await nextTurn();
+  assert.equal(selector.getSelectedEntryId(), "new");
+  assert.ok(selector.render(100).map(stripTerminalSequences).some((line) => line.includes("[flagged]")));
+  assert.equal(selector.render(100).map(stripTerminalSequences).some((line) => line.includes("[pending]")), false);
+});
+
+test("shows toggle errors without closing or moving selection", async () => {
+  let closes = 0;
+  const { selector } = createSelector(snapshot([row("entry", "2026-01-01T00:00:01.000Z", "text")]), {
+    onToggle: async () => {
+      throw new Error("append failed");
+    },
+    onClose: () => {
+      closes++;
+    },
+  });
+  selector.handleInput("\r");
+  await nextTurn();
+  assert.equal(selector.getSelectedEntryId(), "entry");
+  assert.equal(closes, 0);
+  assert.ok(selector.render(100).map(stripTerminalSequences).some((line) => line.includes("[!] append failed")));
+  selector.handleInput("\x1b");
+  assert.equal(closes, 1);
+});
+
+test("allows dangling active rows to unflag", async () => {
+  const dangling = row("missing-id", "2026-01-01T00:00:01.000Z", "", {
+    role: "unknown",
+    active: true,
+    onActiveBranch: false,
+    diagnostic: "Missing source entry",
+  });
+  const toggles: Array<{ entryId: string; active: boolean }> = [];
+  const { selector } = createSelector(snapshot([dangling]), {
+    needsPrivacyConsent: true,
+    onToggle: async (entryId, active) => {
+      toggles.push({ entryId, active });
+      return snapshot([{ ...dangling, active }]);
+    },
+  });
+  selector.handleInput("\r");
+  await nextTurn();
+  assert.deepEqual(toggles, [{ entryId: "missing-id", active: false }]);
+});
+
+test("flagged-only removal selects the nearest remaining row", async () => {
+  let current = snapshot([
+    row("new", "2026-01-01T00:00:03.000Z", "new", { active: true }),
+    row("middle", "2026-01-01T00:00:02.000Z", "middle", { active: true }),
+    row("old", "2026-01-01T00:00:01.000Z", "old", { active: true }),
+  ]);
+  const { selector } = createSelector(current, {
+    onToggle: async (entryId, active) => {
+      current = {
+        ...current,
+        rows: current.rows.map((item) => (item.entryId === entryId ? { ...item, active } : item)),
+      };
+      return current;
+    },
+  });
+  selector.handleInput("\t");
+  selector.handleInput("\t");
+  selector.handleInput("\t");
+  assert.equal(selector.getMode(), "flagged");
+  selector.handleInput("\x1b[B");
+  assert.equal(selector.getSelectedEntryId(), "middle");
+  selector.handleInput("\r");
+  await nextTurn();
+  assert.deepEqual(ids(selector), ["new", "old"]);
+  assert.equal(selector.getSelectedEntryId(), "old");
+});
+
+test("toggles several rows in one invocation and cancel remains available", async () => {
+  let current = snapshot([
+    row("b", "2026-01-01T00:00:02.000Z", "beta"),
+    row("a", "2026-01-01T00:00:01.000Z", "alpha"),
+  ]);
+  let closes = 0;
+  const { selector } = createSelector(current, {
+    onToggle: async (entryId, active) => {
+      current = {
+        ...current,
+        rows: current.rows.map((item) => (item.entryId === entryId ? { ...item, active } : item)),
+      };
+      return current;
+    },
+    onClose: () => {
+      closes++;
+    },
+  });
+  selector.handleInput("\r");
+  await nextTurn();
+  selector.handleInput("\x1b[B");
+  selector.handleInput("\r");
+  await nextTurn();
+  assert.equal(current.rows.filter((item) => item.active).length, 2);
+  selector.handleInput("\x1b");
+  assert.equal(closes, 1);
+});
+
+test("accessibility: cancel declines privacy and exits without a toggle", () => {
+  let toggles = 0;
+  let closes = 0;
+  const { selector } = createSelector(snapshot([row("entry", "2026-01-01T00:00:01.000Z", "text")]), {
+    needsPrivacyConsent: true,
+    onToggle: async () => {
+      toggles++;
+      return snapshot([]);
+    },
+    onClose: () => {
+      closes++;
+    },
+  });
+  selector.handleInput("\r");
+  selector.handleInput("\x1b");
+  assert.equal(toggles, 0);
+  assert.equal(closes, 0);
+  selector.handleInput("\x1b");
+  assert.equal(toggles, 0);
+  assert.equal(closes, 1);
+  selector.handleInput("x");
+  assert.equal(selector.getQuery(), "");
 });

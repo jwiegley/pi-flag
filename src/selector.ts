@@ -36,6 +36,7 @@ export type FlagSelectorOptions = {
   theme: Theme;
   keybindings: KeybindingsManager;
   snapshot: FlagSelectorSnapshot;
+  needsPrivacyConsent: boolean;
   onToggle(entryId: string, nextActive: boolean): Promise<FlagSelectorSnapshot>;
   onClose(): void;
 };
@@ -57,6 +58,10 @@ export class FlagSelector implements Component, Focusable {
   private selectedIndex = 0;
   private mode: FlagSelectorMode = "all";
   private transientError: string | undefined;
+  private privacyEntryId: string | undefined;
+  private busyEntryId: string | undefined;
+  private needsPrivacyConsent: boolean;
+  private closed = false;
   private isFocused = false;
 
   constructor(options: FlagSelectorOptions) {
@@ -64,6 +69,7 @@ export class FlagSelector implements Component, Focusable {
     this.theme = options.theme;
     this.keybindings = options.keybindings;
     this.snapshot = options.snapshot;
+    this.needsPrivacyConsent = options.needsPrivacyConsent;
     this.onToggle = options.onToggle;
     this.onClose = options.onClose;
     this.rebuildRows();
@@ -105,10 +111,24 @@ export class FlagSelector implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (this.keybindings.matches(data, "tui.select.cancel")) {
-      this.onClose();
+    if (this.closed) return;
+    if (this.privacyEntryId) {
+      if (this.keybindings.matches(data, "tui.select.cancel")) {
+        this.privacyEntryId = undefined;
+        this.tui.requestRender();
+      } else if (this.keybindings.matches(data, "tui.select.confirm")) {
+        const row = this.allRows.find(({ entryId }) => entryId === this.privacyEntryId);
+        this.privacyEntryId = undefined;
+        this.needsPrivacyConsent = false;
+        if (row) void this.performToggle(row);
+      }
       return;
     }
+    if (this.keybindings.matches(data, "tui.select.cancel")) {
+      this.close();
+      return;
+    }
+    if (this.busyEntryId) return;
     if (this.keybindings.matches(data, "tui.input.tab")) {
       const modeIndex = MODES.indexOf(this.mode);
       this.mode = MODES[(modeIndex + 1) % MODES.length] ?? "all";
@@ -133,7 +153,7 @@ export class FlagSelector implements Component, Focusable {
       return;
     }
     if (this.keybindings.matches(data, "tui.select.confirm")) {
-      void this.toggleSelected();
+      this.toggleSelected();
       return;
     }
 
@@ -145,6 +165,7 @@ export class FlagSelector implements Component, Focusable {
 
   render(width: number): string[] {
     if (width <= 0) return [];
+    if (this.privacyEntryId) return this.renderPrivacy(width);
     const maxLines = Math.max(1, this.tui.terminal.rows);
     const includeSummary = maxLines >= 4;
     const includeHelp = maxLines >= 5;
@@ -249,27 +270,79 @@ export class FlagSelector implements Component, Focusable {
     this.tui.requestRender();
   }
 
-  private async toggleSelected(): Promise<void> {
+  private toggleSelected(): void {
+    if (this.busyEntryId) return;
     const row = this.filteredRows[this.selectedIndex];
     if (!row) return;
+    if (row.diagnostic && !row.active) {
+      this.transientError = "Diagnostic rows can only be unflagged";
+      this.tui.requestRender();
+      return;
+    }
+    if (!row.active && this.needsPrivacyConsent) {
+      this.privacyEntryId = row.entryId;
+      this.tui.requestRender();
+      return;
+    }
+    void this.performToggle(row);
+  }
+
+  private async performToggle(row: FlagSelectorRow): Promise<void> {
+    if (this.busyEntryId) return;
+    this.busyEntryId = row.entryId;
+    this.selectedEntryId = row.entryId;
+    this.transientError = undefined;
+    this.tui.requestRender();
     try {
-      this.transientError = undefined;
       const snapshot = await this.onToggle(row.entryId, !row.active);
+      if (this.closed) return;
+      this.busyEntryId = undefined;
       this.setSnapshot(snapshot);
     } catch (error) {
+      if (this.closed) return;
+      this.busyEntryId = undefined;
       this.transientError = error instanceof Error ? error.message : String(error);
       this.tui.requestRender();
     }
   }
 
+  private close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.onClose();
+  }
+
+  dispose(): void {
+    this.closed = true;
+  }
+
+  private renderPrivacy(width: number): string[] {
+    const maxLines = Math.max(1, this.tui.terminal.rows);
+    const notice =
+      "pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.";
+    const lines = [
+      this.fit(this.theme.bold("pi-flag — privacy confirmation"), width),
+      ...wrapTextWithAnsi(notice, Math.max(1, width)),
+      this.fit(
+        this.theme.fg(
+          "muted",
+          `${this.keys("tui.select.confirm")} accept · ${this.keys("tui.select.cancel")} decline`,
+        ),
+        width,
+      ),
+    ];
+    return lines.slice(0, maxLines).map((line) => this.fit(line, width));
+  }
+
   private renderRow(row: FlagSelectorRow, selected: boolean, width: number): string {
     const cursor = selected ? "> " : "  ";
     const state = row.diagnostic ? "[!]" : row.active ? "[flagged]" : "[ ]";
+    const pending = this.busyEntryId === row.entryId ? "[pending] " : "";
     const branch = row.onActiveBranch ? "[active]" : "[off-branch]";
     const stopReason = row.assistantStopReason ? ` [${row.assistantStopReason}]` : "";
     const contentPreview = row.textBlocks.join(" ").replace(/[\r\n]+/g, " ").trim();
     const preview = row.diagnostic ?? (contentPreview || "(empty)");
-    const plain = `${cursor}${state} ${row.role} ${row.entryId.slice(0, 8)} ${branch}${stopReason} ${preview}`;
+    const plain = `${cursor}${pending}${state} ${row.role} ${row.entryId.slice(0, 8)} ${branch}${stopReason} ${preview}`;
     const fitted = this.fit(plain, width);
     if (row.diagnostic) return this.theme.fg("error", fitted);
     return selected ? this.theme.inverse(fitted) : fitted;

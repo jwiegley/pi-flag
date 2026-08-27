@@ -744,15 +744,18 @@ Selector, accessibility, Unicode, terminal, and keybinding tests pass.
 ]
 #+end_src
 
-* TODO [#B] 3.2 Implement toggle, privacy, and recovery states    :implementation:
+* DONE [#B] 3.2 Implement toggle, privacy, and recovery states    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.8
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 16:01]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 16:01]
+:CLOSE_REASON: Single-flight toggles, inline privacy consent, error and dangling recovery states implemented.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -785,6 +788,20 @@ Multi-toggle/privacy/recovery tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 23,
+    "issue_id": "flag-3ph.8",
+    "author": "pi",
+    "text": "Task 3.2 evidence:\n\n- Added single-flight async toggle state with visible `[pending]`, duplicate action suppression, and stable selected entry during/after completion.\n- Added exact inline first-activation privacy notice; accept proceeds, decline performs no toggle, and a subsequent configured cancel exits.\n- Toggle failures render inline without closing or moving selection.\n- Active dangling diagnostic rows can unflag without privacy gating; inactive diagnostic activation rejects locally.\n- Flagged-only removal clamps to the nearest remaining row.\n- Multiple rows can be toggled in one selector invocation; configured cancel remains available and disposed selectors ignore later input.\n\nChecks: focused selector tests 14/14 pass; typecheck pass; full `npm run check` 43/43 pass; pack surface valid.\n",
+    "created_at": "2026-08-27T23:01:57Z"
   }
 ]
 #+end_src
