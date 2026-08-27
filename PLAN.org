@@ -9,10 +9,10 @@
 :LABELS:   ["planning","research"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:44]
+:MODIFIED: [2026-08-27 Thu 13:51]
 :CREATED_BY: johnw
-:FINISHED: [2026-08-27 Thu 13:44]
-:CLOSE_REASON: Completed: comprehensive pi-flag implementation plan researched, source-mapped, architected, written, and audited for user review.
+:FINISHED: [2026-08-27 Thu 13:51]
+:CLOSE_REASON: Completed after audit fixes: implementation plan is source-grounded, complete, and ready for user review.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -29,6 +29,20 @@ Research and produce a complete, source-grounded implementation plan for the sta
 ** Acceptance Criteria
 
 Reviewed Markdown plan covers source evidence, prior art, package architecture, ordered implementation tasks, verification, risks, and requirement coverage.
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 7,
+    "issue_id": "flag-implementation-plan-n3z",
+    "author": "pi",
+    "text": "Reopened: Independent goal audit found five plan-completion gaps; reopen review to document user-authorized scope amendment and add provider-change, cross-platform, completion-evidence, and undefined-safe session-file requirements.",
+    "created_at": "2026-08-27T20:48:27Z"
+  }
+]
+#+end_src
 
 * DONE [#B] Revalidate revised pi-flag design against current Pi source    :planning:
 :PROPERTIES:
@@ -377,11 +391,11 @@ pi-flag-implementation-plan.md is complete enough to execute without rediscoveri
 :LABELS:   ["planning","review"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:44]
+:MODIFIED: [2026-08-27 Thu 13:51]
 :ASSIGNEE: pi
 :CREATED_BY: johnw
-:FINISHED: [2026-08-27 Thu 13:44]
-:CLOSE_REASON: Completed: plan structure, source/research/scenario coverage, task contracts, risks, constraints, and no-implementation state audited; final baseline hash inserted after planning closure commit.
+:FINISHED: [2026-08-27 Thu 13:51]
+:CLOSE_REASON: Completed after independent audit: documented scope amendment and added provider-change, cross-platform, completion-evidence, and undefined-safe path requirements.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -434,6 +448,20 @@ Plan passes completeness audit and is ready for user review.
     "author": "pi",
     "text": "Pre-closure plan audit:\n\n- Markdown fences balanced.\n- 15 atomic tasks found.\n- Every task has predecessor, exact files, exact checks/commands, acceptance evidence, and rollback/review boundary.\n- Required scenarios, source map, primary-source bibliography, risks, open decisions, security/privacy checklist, and requirement coverage present.\n- No obsolete `/significant` naming, core-change requirement, implementation files, or Pi source diff.\n- Correction: prior task-5 OBR comment said 13 tasks; final plan contains 15 atomic tasks.\n- Sole remaining placeholder is `<implementation-base>` in final diff command. It will be replaced by the exact planning-closure commit immediately after this OBR graph is closed and committed, then the structural audit will rerun. Any failure reopens this issue.",
     "created_at": "2026-08-27T20:44:03Z"
+  },
+  {
+    "id": 8,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Reopened: Independent goal audit found five plan-completion gaps; reopen review to document user-authorized scope amendment and add provider-change, cross-platform, completion-evidence, and undefined-safe session-file requirements.",
+    "created_at": "2026-08-27T20:48:27Z"
+  },
+  {
+    "id": 9,
+    "issue_id": "flag-implementation-plan-n3z.6",
+    "author": "pi",
+    "text": "Independent audit findings addressed:\n\n1. Scope boundary: plan now records the user’s explicit post-confirmation authorization to create `~/src/pi-flag`, initialize Git/OBR, create AGENTS.md/PLAN.org, and commit planning state. It distinguishes those authorized planning artifacts from still-prohibited production work.\n2. Provider privacy: `model_select` contract, Task 4.2 implementation/tests, README task, source-map row, security coverage, and test cases now require a content-free warning when active flags cross providers; same-provider/no-flag cases must not warn.\n3. Cross-platform terminals: Task 6.2 now has an explicit macOS legacy/Kitty, Linux legacy/Kitty, Windows Terminal PowerShell, WSL, and tmux matrix, with automated representative input tests and unverified-platform release blocking.\n4. Completion evidence: section 17 now records actual no-implementation/no-Pi-source-diff/OBR/repository checks rather than only planning a future implementation audit.\n5. Undefined safety: durability contract now requires `const sessionFile = getSessionFile(); const durable = sessionFile !== undefined && existsSync(sessionFile);`, with tests for undefined, absent, and existing paths.\n\nPlan fences remain balanced; obsolete unsafe `existsSync(getSessionFile())` form is absent. Final planning baseline hash will be updated after this reopened audit issue and epic are reclosed and committed.",
+    "created_at": "2026-08-27T20:51:06Z"
   }
 ]
 #+end_src
