@@ -673,15 +673,18 @@ Focus/final capacity boundary tests pass without stale-prompt reads.
 ]
 #+end_src
 
-* TODO [#B] 3.1 Implement selector rendering and filtering    :implementation:
+* DONE [#B] 3.1 Implement selector rendering and filtering    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.7
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:56]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:56]
+:CLOSE_REASON: Filterable bounded selector and named keyboard/non-color/Unicode accessibility coverage implemented.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -723,6 +726,20 @@ Selector, accessibility, Unicode, terminal, and keybinding tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 22,
+    "issue_id": "flag-3ph.7",
+    "author": "pi",
+    "text": "Task 3.1 evidence:\n\n- Added public-primitives-only `FlagSelector` with `Input`, supplied `KeybindingsManager`, fuzzy full-corpus filtering, all/user/assistant/flagged modes, newest-first source order, and stable entry-ID selection.\n- Rendering includes ASCII focus cursor, textual `[flagged]`/`[ ]`, `[active]`/`[off-branch]`, `[!]` diagnostic state, role/ID/StopReason, status counts, bounded detail, configured-key help, and 80x24/40x10/20x5/tiny fallbacks.\n- Navigation/page/confirm/cancel/tab use configurable action IDs only; all other text goes through `Input`.\n- Named accessibility tests cover plain-text focus/non-color state, Unicode/graphemes, bracketed multiline paste, legacy arrows, Kitty CSI-u printable and functional control sequences, custom bindings replacing defaults, no-match and cancel.\n- No direct stdin, raw-mode ownership, timers, listeners, `matchesKey`, or literal production key checks.\n\nChecks: focused selector tests 7/7 pass; typecheck pass; full `npm run check` 36/36 pass; pack surface valid.\n",
+    "created_at": "2026-08-27T22:56:26Z"
   }
 ]
 #+end_src
