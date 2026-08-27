@@ -300,15 +300,18 @@ All required scenarios have a coherent extension-only design and focused verific
 ]
 #+end_src
 
-* TODO [#B] Write executable pi-flag implementation plan    :documentation:planning:
+* DONE [#B] Write executable pi-flag implementation plan    :documentation:planning:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-implementation-plan-n3z.5
 :LABELS:   ["documentation","planning"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:18]
+:MODIFIED: [2026-08-27 Thu 13:42]
+:ASSIGNEE: pi
 :CREATED_BY: johnw
+:FINISHED: [2026-08-27 Thu 13:42]
+:CLOSE_REASON: Completed: wrote comprehensive executable implementation plan with exact modules, atomic tasks, commands, evidence, risks, and approval gate.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -347,6 +350,20 @@ pi-flag-implementation-plan.md is complete enough to execute without rediscoveri
     "created_by": "johnw",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 5,
+    "issue_id": "flag-implementation-plan-n3z.5",
+    "author": "pi",
+    "text": "Implementation plan drafted at `/Users/johnw/Databases/pi/.pi/goals/artifacts/mtbyluhm-ov5ctb/pi-flag-implementation-plan.md`.\n\nPlan contents:\n- pinned Pi source revision/version and source/API map;\n- revised product contract, non-goals, and design delta log;\n- verified primary-source prior art and TypeScript/npm/security guidance;\n- selected zero-build/zero-runtime-dependency package layout;\n- exact `state.ts`, `focus.ts`, `selector.ts`, and `index.ts` contracts;\n- lifecycle and end-to-end traces;\n- 13 ordered atomic implementation tasks across scaffold, pure state, projection/capacity, selector, wiring, integration, docs/smoke, and final audit;\n- each task names predecessors, exact files/symbols, behavior/tests, exact commands, acceptance evidence, and rollback/review boundary;\n- focused faux-provider/session/TUI/package/manual verification matrix;\n- security/privacy checklist, risks/mitigations, open decisions with defaults, and requirement coverage;\n- explicit approval gate and no publish/core-change rule.\n\nNo production files were created in `~/src/pi-flag`; only AGENTS.md/PLAN.org and OBR commits exist.",
+    "created_at": "2026-08-27T20:42:10Z"
   }
 ]
 #+end_src
