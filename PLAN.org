@@ -87,15 +87,18 @@ Source-cited design review confirms extension-only feasibility or records a bloc
 ]
 #+end_src
 
-* TODO [#B] Map standalone extension packaging and Pi integration surfaces    :packaging:planning:
+* DONE [#B] Map standalone extension packaging and Pi integration surfaces    :packaging:planning:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-implementation-plan-n3z.2
 :LABELS:   ["packaging","planning"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:18]
+:MODIFIED: [2026-08-27 Thu 13:25]
+:ASSIGNEE: pi
 :CREATED_BY: johnw
+:FINISHED: [2026-08-27 Thu 13:25]
+:CLOSE_REASON: Completed: mapped zero-build standalone package, loader/manifest, host peers, install flows, custom TUI, public faux-provider tests, and package smoke checks.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -138,14 +141,29 @@ Exact source paths and symbols support a selected minimal standalone package lay
 ]
 #+end_src
 
-* TODO [#B] Research prior art and TypeScript extension hygiene    :research:typescript:
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 2,
+    "issue_id": "flag-implementation-plan-n3z.2",
+    "author": "pi",
+    "text": "Standalone package/API mapping (2026-08-27):\n\nSelected package direction: zero-build TypeScript Pi package, no runtime dependencies, explicit `pi.extensions` manifest.\n\nEvidence and implications:\n\n1. Package manifest: `package.json` may declare `pi.extensions: [\"./index.ts\"]`; explicit manifest entries take precedence over convention discovery (`packages/coding-agent/src/core/pi-manifest.ts:4-35`; `package-manager.ts:2153-2202`; `test/package-manager.test.ts:265-300`).\n2. Runtime loading: Pi accepts `.ts` and `.js` and imports TypeScript through jiti (`extensions/loader.ts:490-519`, `666-709`). The official `with-deps` example points directly at `index.ts` and declares no build (`examples/extensions/with-deps/package.json:1-22`). No compiled `dist/` is required.\n3. Entry contract: default export must be an `ExtensionFactory`; non-function default exports are rejected (`extensions/loader.ts:524-589`; `extensions/types.ts:1582-1592`).\n4. Host imports: loader virtual modules/aliases provide coding-agent, TUI, agent-core, ai, and typebox in source, Node bundle, Bun, and SEA modes (`extensions/loader.ts:1-147`). Official package docs require imported host packages in wildcard `peerDependencies` and not bundled (`docs/packages.md:169-179`). For pi-flag, runtime imports require only `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui`; duplicate exact current versions in `devDependencies` for local checking.\n5. Runtime dependencies: none. Node stdlib, Pi APIs, and TUI exports suffice. Any future third-party runtime import must move to `dependencies`; git installs omit dev dependencies (`package-manager.ts:1772-1837`).\n6. Minimal package surface proposed for planning: `package.json`, `index.ts`, `src/state.ts`, `src/focus.ts`, `src/selector.ts`, `test/`, `tsconfig.json`, `README.md`, `LICENSE`, `.gitignore`, `package-lock.json`; package `files` allowlists `index.ts`, `src/**/*.ts`, README/LICENSE. No `main` or `exports` is needed for Pi discovery unless a public library API is intentionally added.\n7. Install/load flows are documented: `pi install npm:pi-flag@<version>`, `pi install git:<repo>@<tag>`, `pi install /absolute/path`, and temporary `pi -e ...` (`docs/packages.md:17-115`). Local directory follows package rules; npm/git installs resolve package manifest resources.\n8. Name availability: `https://registry.npmjs.org/pi-flag` returned HTTP 404 on 2026-08-27. Recheck immediately before publication; current availability is not a reservation.\n9. Custom selector: `ctx.ui.custom()` receives TUI, theme, KeybindingsManager, and completion callback; non-overlay mode replaces editor and focuses returned component (`extensions/types.ts:133-224`; `interactive-mode.ts:2755-2832`). TUI barrel publicly exports Component/Focusable, Input, Text, SelectList, fuzzyFilter, keybinding types, and width utilities (`packages/tui/src/index.ts:1-148`).\n10. Selector implementation should be purpose-built and small. `SelectList` is useful for rendering/navigation but only prefix-filters `value`, lacks page actions/item mutation, and uses global keybindings (`tui/src/components/select-list.ts:40-220`). A `FlagSelector` component can use `fuzzyFilter`, supplied KeybindingsManager, and direct bounded rendering without copying TreeSelector.\n11. TUI-only guard is mandatory: `ctx.mode === \"tui\"`; `hasUI` is true for RPC but custom terminal components are TUI-specific (`extensions/types.ts:307-349`).\n12. Public test path: pure Node `node:test`/`assert` for reducer/focus/selector; extension registration via exported `discoverAndLoadExtensions`/`ExtensionRunner`; provider integration can use exported `fauxProvider`, `ModelRuntime.registerNativeProvider`, `DefaultResourceLoader` with extension path, `SettingsManager.inMemory`, `SessionManager.inMemory`, and `createAgentSession`. No import from internal `test/suite/harness.ts` is needed.\n13. Packaging checks: `tsc --noEmit`, Node tests with erasable TypeScript, `npm pack --dry-run --json` allowlist assertion, local `pi -e /Users/johnw/src/pi-flag`, installed-directory smoke from packed tarball, and post-publication pinned `pi -e npm:pi-flag@x.y.z`.\n14. Current Pi runtime baseline is Node >=22.19.0 and package versions 0.84.3 (`packages/coding-agent/package.json:1-106`). Plan should pin exact dev versions/lockfile while keeping host peers wildcard per Pi docs.\n\nRecommended zero-build manifest essentials: name `pi-flag`, initial `0.1.0`, `type: module`, `keywords: [\"pi-package\", \"pi-extension\"]`, `engines.node >=22.19.0`, `pi.extensions [\"./index.ts\"]`, narrow files allowlist, optional wildcard peers for coding-agent/TUI, exact dev pins, no install/build lifecycle and no runtime dependencies.\n\nNo Pi core change or package build step is required.",
+    "created_at": "2026-08-27T20:25:35Z"
+  }
+]
+#+end_src
+
+* DOING [#B] Research prior art and TypeScript extension hygiene    :research:typescript:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-implementation-plan-n3z.3
 :LABELS:   ["research","typescript"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:18]
+:MODIFIED: [2026-08-27 Thu 13:19]
+:ASSIGNEE: pi
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
