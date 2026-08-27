@@ -9,34 +9,49 @@
 :LABELS:   ["planning","research"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
+## Summary
+
 Research and produce a complete, source-grounded implementation plan for the standalone pi-flag extension without implementing production code.
+
+## Success Criteria
+
+- Reviewed Markdown plan covers source evidence, prior art, package architecture, ordered implementation tasks, verification, risks, and requirement coverage.
 
 ** Acceptance Criteria
 
 Reviewed Markdown plan covers source evidence, prior art, package architecture, ordered implementation tasks, verification, risks, and requirement coverage.
 
-* TODO [#B] Revalidate revised pi-flag design against current Pi source    :planning:
+* DONE [#B] Revalidate revised pi-flag design against current Pi source    :planning:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-implementation-plan-n3z.1
 :LABELS:   ["planning","source-review"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
+:ASSIGNEE: pi
 :CREATED_BY: johnw
+:FINISHED: [2026-08-27 Thu 13:18]
+:CLOSE_REASON: Completed: source-cited revalidation confirmed extension-only feasibility and recorded TUI, concurrency, budget-timing, append-rescan, and initial-persistence deltas.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
+## Summary
+
 Audit the approved extension-only design against current Pi source and record all deltas or contradictions.
+
+## Acceptance Criteria
+
+- Source-cited design review confirms extension-only feasibility or records a blocker requiring user decision.
 
 ** Acceptance Criteria
 
@@ -58,6 +73,20 @@ Source-cited design review confirms extension-only feasibility or records a bloc
 ]
 #+end_src
 
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 1,
+    "issue_id": "flag-implementation-plan-n3z.1",
+    "author": "pi",
+    "text": "Source revalidation findings (2026-08-27):\n\n1. Extension-only feasibility remains confirmed. `ExtensionUIContext.custom` supplies TUI, theme, `KeybindingsManager`, and completion callback (`packages/coding-agent/src/core/extensions/types.ts:133-284`); interactive mode hosts a non-overlay focused component (`interactive-mode.ts:2755-2832`).\n2. `/flag` must guard `ctx.mode === \"tui\"`; `hasUI` is also true in RPC, while custom TUI components are explicitly terminal-only (`extensions/types.ts:307-349`). Non-TUI modes need a clear notification/error, not attempted component construction.\n3. `/flag` executes before normal streaming/compaction checks. `ctx.isIdle()` only reflects `_isAgentRunActive`; it does not include manual compaction or branch summarization (`agent-session.ts:895-974`). Track summarization activity through `session_before_compact`/`session_compact`/`session_compact_failed` and `session_before_tree`/`session_tree`, and refuse selector mutation while active. `waitForIdle()` alone is insufficient.\n4. Recompute capacity in the `input` handler using the current `ctx.getSystemPrompt()` and model. `session_start` fires before `resources_discover` can rebuild the base prompt (`agent-session.ts:2417-2465`), so a startup-only budget cache can be stale. Cache lossless flag serialization separately; make each input perform the no-send capacity decision.\n5. `model_select` fires after `agent.state.model` changes (`agent-session.ts:1616-1656`), so its event/model is safe for immediate status recomputation, but `input` remains authoritative.\n6. `pi.appendEntry()` is synchronous but returns void (`extensions/types.ts:1357-1384`). After toggling, rescan `getEntries()` to recover the persisted enclosing timestamp and update `flaggedAt`; do not invent an entry ID or timestamp.\n7. Before the first assistant response, session file creation is deferred (`session-manager.ts:1016-1043`). Flags in an otherwise unsaved initial session are process-local until the first assistant flushes the session. The selector must label this state rather than promise restart durability.\n8. Full-log reduction and session-ID filtering are valid. Compaction appends rather than deletes; fork/clone create a new session ID while copying some/all custom records (`session-manager.ts:418-470`, `1414-1635`), so copied flag records remain inert.\n9. Existing `input: handled` is a real no-send gate (`agent-session.ts:1139-1215`; `extensions/runner.ts:1246-1285`). `before_agent_start` remains projection-only because its exceptions are caught and processing continues (`extensions/runner.ts:1131-1195`).\n10. Direct `sendCustomMessage({triggerTurn:true})` bypasses both input and before-agent-start (`agent-session.ts:1450-1494`); the documented v1 guarantee must stay scoped to user-input runs and their continuations.\n\nDesign delta required in implementation plan: add TUI guard, summarization-active guard, per-input budget recomputation, post-append rescan, and unsaved-session durability label. No Pi core change is required.",
+    "created_at": "2026-08-27T20:17:57Z"
+  }
+]
+#+end_src
+
 * TODO [#B] Map standalone extension packaging and Pi integration surfaces    :packaging:planning:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
@@ -65,14 +94,20 @@ Source-cited design review confirms extension-only feasibility or records a bloc
 :LABELS:   ["packaging","planning"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
+## Summary
+
 Verify package loading, custom TUI, lifecycle, persistence, prompt, test, and standalone distribution surfaces.
+
+## Acceptance Criteria
+
+- Exact source paths and symbols support a selected minimal standalone package layout.
 
 ** Acceptance Criteria
 
@@ -110,14 +145,20 @@ Exact source paths and symbols support a selected minimal standalone package lay
 :LABELS:   ["research","typescript"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
+## Summary
+
 Research primary sources for pinned context, plugin state, filterable terminal UI, TypeScript, npm packaging, security, and Pi extension practices.
+
+## Acceptance Criteria
+
+- Bibliography records access dates, concrete lessons, applicability limits, and design implications.
 
 ** Acceptance Criteria
 
@@ -155,14 +196,20 @@ Bibliography records access dates, concrete lessons, applicability limits, and d
 :LABELS:   ["architecture","planning"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
-Select minimal package shape and specify selector, state reducer, prompt projection, capacity gate, lifecycle, failures, privacy, and tests.
+## Summary
+
+Select the minimal package shape and specify selector, state reducer, prompt projection, capacity gate, lifecycle, failures, privacy, and tests.
+
+## Acceptance Criteria
+
+- All required scenarios have a coherent extension-only design and focused verification contract.
 
 ** Acceptance Criteria
 
@@ -209,14 +256,20 @@ All required scenarios have a coherent extension-only design and focused verific
 :LABELS:   ["documentation","planning"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
+## Summary
+
 Write ordered atomic implementation tasks with exact files, symbols, dependencies, tests, commands, evidence, and review boundaries.
+
+## Acceptance Criteria
+
+- pi-flag-implementation-plan.md is complete enough to execute without rediscovering architecture.
 
 ** Acceptance Criteria
 
@@ -254,14 +307,20 @@ pi-flag-implementation-plan.md is complete enough to execute without rediscoveri
 :LABELS:   ["planning","review"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 13:14]
-:MODIFIED: [2026-08-27 Thu 13:14]
+:MODIFIED: [2026-08-27 Thu 13:18]
 :CREATED_BY: johnw
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
+## Summary
+
 Cross-check source claims, research, scenarios, risks, constraints, and coverage; confirm no implementation/source diff.
+
+## Acceptance Criteria
+
+- Plan passes completeness audit and is ready for user review.
 
 ** Acceptance Criteria
 
