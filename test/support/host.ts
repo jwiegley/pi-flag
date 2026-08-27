@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fauxProvider, type FauxProviderHandle } from "@earendil-works/pi-ai";
+import {
+  fauxProvider,
+  type FauxProviderHandle,
+  type RegisterFauxProviderOptions,
+} from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -20,10 +24,20 @@ export type TestHost = {
   session: AgentSession;
   sessionManager: SessionManager;
   extensionsResult: LoadExtensionsResult;
+  modelRuntime: ModelRuntime;
+  resourceLoader: DefaultResourceLoader;
   cleanup(): void;
 };
 
-export async function createTestHost(extensionFactories: InlineExtension[] = []): Promise<TestHost> {
+export type TestHostOptions = {
+  faux?: RegisterFauxProviderOptions;
+  extensionPaths?: string[];
+};
+
+export async function createTestHost(
+  extensionFactories: InlineExtension[] = [],
+  options: TestHostOptions = {},
+): Promise<TestHost> {
   const root = mkdtempSync(join(tmpdir(), "pi-flag-test-"));
   const agentDir = join(root, "agent");
   const settingsManager = SettingsManager.inMemory();
@@ -31,7 +45,8 @@ export async function createTestHost(extensionFactories: InlineExtension[] = [])
     cwd: root,
     agentDir,
     settingsManager,
-    additionalExtensionPaths: [fileURLToPath(new URL("../../index.ts", import.meta.url))],
+    additionalExtensionPaths:
+      options.extensionPaths ?? [fileURLToPath(new URL("../../index.ts", import.meta.url))],
     extensionFactories,
     noSkills: true,
     noPromptTemplates: true,
@@ -40,7 +55,7 @@ export async function createTestHost(extensionFactories: InlineExtension[] = [])
   });
   await resourceLoader.reload();
 
-  const faux = fauxProvider();
+  const faux = fauxProvider(options.faux);
   const modelRuntime = await ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
     modelsPath: null,
@@ -67,6 +82,8 @@ export async function createTestHost(extensionFactories: InlineExtension[] = [])
     session,
     sessionManager,
     extensionsResult,
+    modelRuntime,
+    resourceLoader,
     cleanup() {
       session.dispose();
       modelRuntime.unregisterProvider(faux.provider.id);

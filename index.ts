@@ -1,6 +1,14 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { assessFocusAdmission, serializeFocus, type SerializedFocus } from "./src/focus.ts";
+import {
+  appendFocus,
+  assessFinalRequest,
+  assessFocusAdmission,
+  estimateInputTokens,
+  serializeFocus,
+  verifyFocusProjection,
+  type SerializedFocus,
+} from "./src/focus.ts";
 import {
   FlagSelector,
   type FlagSelectorRow,
@@ -21,6 +29,12 @@ type RuntimeState = {
   serialized: SerializedFocus;
   manualCompactionActive: boolean;
   hasCurrentSessionRecords: boolean;
+  run?: {
+    generation: number;
+    focus: SerializedFocus;
+    expandedInputTokens: number;
+    blocked: boolean;
+  };
 };
 
 function emptyReplay(): FlagReplay {
@@ -34,6 +48,7 @@ export default function piFlag(pi: ExtensionAPI): void {
     manualCompactionActive: false,
     hasCurrentSessionRecords: false,
   };
+  let runGeneration = 0;
 
   const refreshState = (ctx: ExtensionContext): void => {
     const entries = ctx.sessionManager.getEntries();
@@ -147,6 +162,7 @@ export default function piFlag(pi: ExtensionAPI): void {
 
   pi.on("session_start", (_event, ctx) => {
     state.manualCompactionActive = false;
+    delete state.run;
     refreshState(ctx);
   });
 
@@ -156,6 +172,7 @@ export default function piFlag(pi: ExtensionAPI): void {
     state.serialized = { block: "", sentinel: "", estimatedTokens: 0 };
     state.manualCompactionActive = false;
     state.hasCurrentSessionRecords = false;
+    delete state.run;
   });
 
   pi.on("session_before_compact", (event, ctx) => {
@@ -167,8 +184,96 @@ export default function piFlag(pi: ExtensionAPI): void {
     refreshState(ctx);
   });
 
-  pi.on("session_compact_failed", () => {
+  pi.on("session_compact_failed", (event, ctx) => {
     state.manualCompactionActive = false;
+    if (event.reason === "overflow" && state.replay.active.size > 0) {
+      ctx.ui.notify(
+        `Context overflow recovery failed with ${state.replay.active.size} active pi-flag entr${state.replay.active.size === 1 ? "y" : "ies"}. Nothing was truncated. Open /flag to unflag an entry or select a larger model.`,
+        "error",
+      );
+    }
+  });
+
+  pi.on("model_select", (event, ctx) => {
+    refreshState(ctx);
+    if (
+      state.replay.active.size > 0 &&
+      event.previousModel !== undefined &&
+      event.previousModel.provider !== event.model.provider
+    ) {
+      ctx.ui.notify(
+        `pi-flag will resend ${state.replay.active.size} active flag(s) (~${state.serialized.estimatedTokens} tokens) in full to provider ${event.model.provider} on the next user-input run.`,
+        "warning",
+      );
+    }
+  });
+
+  pi.on("input", (_event, ctx) => {
+    delete state.run;
+    refreshState(ctx);
+    const blocker = state.replay.blockers[0];
+    if (blocker) {
+      ctx.ui.notify(`${blocker.message}. Nothing was omitted. Open /flag to unflag it.`, "error");
+      return { action: "handled" };
+    }
+    const admission = assessFocusAdmission({ focus: state.serialized, model: ctx.model });
+    if (admission.status === "blocked") {
+      ctx.ui.notify(admission.reason, "error");
+      return { action: "handled" };
+    }
+    return { action: "continue" };
+  });
+
+  pi.on("before_agent_start", (event) => {
+    if (state.serialized.block.length === 0) {
+      delete state.run;
+      return;
+    }
+    const focus = state.serialized;
+    state.run = {
+      generation: ++runGeneration,
+      focus,
+      expandedInputTokens: estimateInputTokens(event.prompt, event.images),
+      blocked: false,
+    };
+    return { systemPrompt: appendFocus(event.systemPrompt, focus) };
+  });
+
+  pi.on("context", (_event, ctx) => {
+    if (state.replay.active.size === 0 && state.replay.blockers.length === 0) return;
+    const run = state.run;
+    if (!run) {
+      ctx.ui.notify(
+        "pi-flag blocked an unsupported direct-trigger turn because its user-input projection hook did not run. Use sendUserMessage for extension-triggered turns.",
+        "error",
+      );
+      ctx.abort();
+      return;
+    }
+    if (run.blocked) return;
+    const finalSystemPrompt = ctx.getSystemPrompt();
+    const integrity = verifyFocusProjection(finalSystemPrompt, run.focus);
+    if (integrity.status === "blocked") {
+      run.blocked = true;
+      ctx.ui.notify(integrity.reason, "error");
+      ctx.abort();
+      return;
+    }
+    const assessment = assessFinalRequest({
+      finalSystemPrompt,
+      focus: run.focus,
+      expandedInputTokens: run.expandedInputTokens,
+      model: ctx.model,
+    });
+    if (assessment.status === "blocked") {
+      run.blocked = true;
+      ctx.ui.notify(assessment.reason, "error");
+      ctx.abort();
+    }
+  });
+
+  pi.on("agent_settled", () => {
+    delete state.run;
   });
 
   pi.registerCommand("flag", {

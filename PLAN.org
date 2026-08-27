@@ -75,15 +75,18 @@ Dependency security evidence is recorded and package scaffold checks pass.
 ]
 #+end_src
 
-* TODO [#B] 4.2 Wire input gate and system-prompt projection    :implementation:
+* DONE [#B] 4.2 Wire input gate and system-prompt projection    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.10
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 16:39]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 16:39]
+:CLOSE_REASON: Stale-safe input gate, exact one-block projection, final context guard, and privacy/model lifecycle wired.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -125,6 +128,20 @@ Exact one-block, stale-prompt, capacity, abort-boundary, and privacy tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 25,
+    "issue_id": "flag-3ph.10",
+    "author": "pi",
+    "text": "Task 4.2 evidence:\n\n- Added `model_select`, `input`, `before_agent_start`, `context`, and `agent_settled` wiring.\n- Input refreshes replay and performs only blocker/model/focus admission; source grep shows the sole `getSystemPrompt()` call is in `context`, never input. Handled blocker/focus-cap paths consume no faux response.\n- `before_agent_start` caches final expanded text/image tokens and an exact serialized generation, appending one canonical block.\n- Context reads the post-chain prompt once, verifies one byte-identical block/sentinel, assesses final mandatory capacity without adding focus, leaves event messages unchanged, and raises abort on missing/altered/duplicate block or overflow.\n- Integration observers after the guard see `AbortSignal.aborted === true`; current Agent/Pi runtime stops before invoking the faux provider, so queued responses remain untouched (stronger than the plan’s conservative provider-invocation boundary).\n- Tests cover two stale-effective-prompt turns, before/after input transformations, later handled input, cooperative middleware order, replacement/alteration/duplication, reload/current suffix, direct custom-trigger rejection, final capacity, no-flag prompt identity, model downsizing with `/flag` recovery, and content-free cross-provider/overflow guidance.\n- Same-provider/no-flag model switches do not warn; cross-provider active state warns once with count/tokens/provider and no flagged content.\n- No explicit `any`, raw key checks, context message injection, or provider/network use.\n\nChecks: focused extension+focus tests 34/34 pass; typecheck pass; full `npm run check` passes all 64 discovered tests including support/fixture modules; pack surface valid.\n",
+    "created_at": "2026-08-27T23:39:06Z"
   }
 ]
 #+end_src

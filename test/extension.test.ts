@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type {
   Extension,
   ExtensionCommandContext,
@@ -18,6 +19,7 @@ import {
   TUI_KEYBINDINGS,
 } from "@earendil-works/pi-tui";
 
+import { serializeFocus } from "../src/focus.ts";
 import { FlagSelector } from "../src/selector.ts";
 import { FLAG_RECORD_TYPE, parseFlagRecord, replayFlags } from "../src/state.ts";
 import { createTestHost, type TestHost } from "./support/host.ts";
@@ -145,6 +147,26 @@ function nextTurn(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+function appendFlaggedUser(host: TestHost, text: string): string {
+  const entryId = host.sessionManager.appendMessage({ role: "user", content: text, timestamp: Date.now() });
+  host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    version: 1,
+    sessionId: host.sessionManager.getSessionId(),
+    targetEntryId: entryId,
+    active: true,
+  });
+  return entryId;
+}
+
+function focusForHost(host: TestHost) {
+  const replay = replayFlags(host.sessionManager.getEntries(), host.sessionManager.getSessionId());
+  return serializeFocus(replay.active, host.sessionManager.getSessionId());
+}
+
+function countOccurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
 test("loads the package and dispatches a public extension event", async () => {
   let sessionStarts = 0;
   const host = await createTestHost([
@@ -175,6 +197,11 @@ test("registers only the flag command and planned lifecycle handlers", async () 
     const extension = packageExtension(host);
     assert.deepEqual([...extension.commands.keys()], ["flag"]);
     assert.deepEqual([...extension.handlers.keys()].sort(), [
+      "agent_settled",
+      "before_agent_start",
+      "context",
+      "input",
+      "model_select",
       "session_before_compact",
       "session_compact",
       "session_compact_failed",
@@ -349,6 +376,436 @@ test("keeps /flag available to tombstone a dangling active record", async () => 
       );
     assert.equal(records.length, 2);
     assert.equal(parseFlagRecord(records.at(-1)?.data)?.active, false);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("leaves an unflagged system prompt byte-identical", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  let capturedSystemPrompt: string | undefined;
+  host.faux.setResponses([
+    (context) => {
+      capturedSystemPrompt = context.systemPrompt;
+      return fauxAssistantMessage("ok");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const basePrompt = host.session.systemPrompt;
+    await host.session.prompt("hello");
+    assert.equal(capturedSystemPrompt, basePrompt);
+    assert.equal(capturedSystemPrompt?.includes("<!-- pi-flag:v1:sha256:"), false);
+    assert.equal(ui.notifications.length, 0);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("input blocks dangling state before consuming a faux response", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    version: 1,
+    sessionId: host.sessionManager.getSessionId(),
+    targetEntryId: "missing",
+    active: true,
+  });
+  host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("blocked");
+    assert.equal(host.faux.state.callCount, 0);
+    assert.equal(host.faux.getPendingResponseCount(), 1);
+    assert.ok(ui.notifications.some(({ message, type }) => message.includes("missing") && message.includes("/flag") && type === "error"));
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("input blocks focus-cap overflow without reading or sending a system prompt", async () => {
+  const host = await createTestHost([], {
+    faux: { models: [{ id: "tiny", contextWindow: 4000, maxTokens: 1000 }] },
+  });
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "x".repeat(6000));
+  host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("blocked");
+    assert.equal(host.faux.state.callCount, 0);
+    assert.equal(host.faux.getPendingResponseCount(), 1);
+    assert.ok(ui.notifications.some(({ message }) => message.includes("Focus requires") && message.includes("Nothing was truncated")));
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("two sequential user runs send one byte-identical focus block without stale double count", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "persistent focus");
+  const systemPrompts: string[] = [];
+  host.faux.setResponses([
+    (context) => {
+      systemPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("first");
+    },
+    (context) => {
+      systemPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("second");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("one");
+    await host.session.prompt("two");
+    const focus = focusForHost(host);
+    assert.equal(host.faux.state.callCount, 2);
+    assert.equal(systemPrompts.length, 2);
+    assert.equal(systemPrompts[0], systemPrompts[1]);
+    assert.equal(countOccurrences(systemPrompts[0] ?? "", focus.block), 1);
+    assert.equal(countOccurrences(systemPrompts[1] ?? "", focus.block), 1);
+    assert.equal(ui.notifications.some(({ type }) => type === "error"), false);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("input and before-agent middleware chain around one canonical focus block", async () => {
+  const beforePath = fileURLToPath(new URL("./fixtures/before-middleware.ts", import.meta.url));
+  const packagePath = fileURLToPath(new URL("../index.ts", import.meta.url));
+  const host = await createTestHost(
+    [
+      {
+        name: "after-middleware",
+        factory(pi) {
+          pi.on("input", (event) => ({
+            action: "transform",
+            text: `${event.text}:after`,
+            ...(event.images === undefined ? {} : { images: event.images }),
+          }));
+          pi.on("before_agent_start", (event) => ({
+            systemPrompt: `${event.systemPrompt}\nLATE-MIDDLEWARE`,
+          }));
+        },
+      },
+    ],
+    { extensionPaths: [beforePath, packagePath] },
+  );
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "focus");
+  let capturedSystemPrompt = "";
+  let capturedInput = "";
+  host.faux.setResponses([
+    (context) => {
+      capturedSystemPrompt = context.systemPrompt ?? "";
+      const message = context.messages.at(-1);
+      assert.equal(message?.role, "user");
+      if (message?.role === "user") {
+        capturedInput =
+          typeof message.content === "string"
+            ? message.content
+            : message.content.filter((block) => block.type === "text").map((block) => block.text).join("");
+      }
+      return fauxAssistantMessage("ok");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("original");
+    const focus = focusForHost(host);
+    assert.equal(capturedInput, "before:original:after");
+    assert.equal(countOccurrences(capturedSystemPrompt, focus.block), 1);
+    assert.ok(capturedSystemPrompt.indexOf("EARLY-MIDDLEWARE") < capturedSystemPrompt.indexOf(focus.block));
+    assert.ok(capturedSystemPrompt.indexOf(focus.block) < capturedSystemPrompt.indexOf("LATE-MIDDLEWARE"));
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("a later handled input prevents the run and leaves the faux queue untouched", async () => {
+  const host = await createTestHost([
+    {
+      name: "handled-after-pi-flag",
+      factory(pi) {
+        pi.on("input", () => ({ action: "handled" }));
+      },
+    },
+  ]);
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "focus");
+  host.faux.setResponses([fauxAssistantMessage("queued")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("handled");
+    assert.equal(host.faux.state.callCount, 0);
+    assert.equal(host.faux.getPendingResponseCount(), 1);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("final capacity aborts visibly with one block and unchanged context messages", async () => {
+  let signalWasAborted = false;
+  let capturedSystemPrompt = "";
+  let capturedMessages: unknown;
+  const host = await createTestHost(
+    [
+      {
+        name: "post-pi-flag-observer",
+        factory(pi) {
+          pi.on("before_agent_start", (event) => {
+            capturedSystemPrompt = event.systemPrompt;
+          });
+          pi.on("context", (event, ctx) => {
+            signalWasAborted = ctx.signal?.aborted === true;
+            capturedMessages = structuredClone(event.messages);
+          });
+        },
+      },
+    ],
+    { faux: { models: [{ id: "tiny-final", contextWindow: 4000, maxTokens: 1000 }] } },
+  );
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "small focus");
+  host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("current input");
+    const focus = focusForHost(host);
+    assert.equal(host.faux.state.callCount, 0);
+    assert.equal(host.faux.getPendingResponseCount(), 1);
+    assert.equal(signalWasAborted, true);
+    assert.equal(countOccurrences(capturedSystemPrompt, focus.block), 1);
+    assert.ok(Array.isArray(capturedMessages));
+    assert.equal(capturedMessages.length, 1);
+    assert.ok(ui.notifications.some(({ message, type }) => message.includes("Nothing was truncated") && type === "error"));
+
+    await runFlag(host, commandContext(host, ui.ui));
+    assert.equal(ui.components.length, 1);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("destructive, altered, and duplicate later prompts abort with an already-raised signal", async () => {
+  for (const mode of ["replace", "alter", "duplicate"] as const) {
+    let signalWasAborted = false;
+    let messagesAfterGuard: unknown;
+    let finalSystemPrompt = "";
+    const host = await createTestHost([
+      {
+        name: `destructive-${mode}`,
+        factory(pi) {
+          pi.on("before_agent_start", (event) => {
+            if (mode === "replace") return { systemPrompt: "DESTROYED" };
+            if (mode === "alter") {
+              return { systemPrompt: event.systemPrompt.replace("significant session observations", "changed") };
+            }
+            return { systemPrompt: `${event.systemPrompt}\n${event.systemPrompt}` };
+          });
+        },
+      },
+      {
+        name: `observer-${mode}`,
+        factory(pi) {
+          pi.on("before_agent_start", (event) => {
+            finalSystemPrompt = event.systemPrompt;
+          });
+          pi.on("context", (event, ctx) => {
+            signalWasAborted = ctx.signal?.aborted === true;
+            messagesAfterGuard = structuredClone(event.messages);
+          });
+        },
+      },
+    ]);
+    const ui = createUiHarness();
+    appendFlaggedUser(host, `focus-${mode}`);
+    host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
+    try {
+      await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+      await host.session.prompt(`input-${mode}`);
+      const focus = focusForHost(host);
+      assert.equal(signalWasAborted, true, mode);
+      assert.equal(host.faux.state.callCount, 0, mode);
+      assert.equal(host.faux.getPendingResponseCount(), 1, mode);
+      assert.ok(Array.isArray(messagesAfterGuard));
+      assert.equal(messagesAfterGuard.length, 1);
+      assert.equal(countOccurrences(finalSystemPrompt, focus.block), mode === "duplicate" ? 2 : 0);
+      const error = ui.notifications.find(({ type }) => type === "error");
+      assert.ok(error, mode);
+      assert.match(error.message, /Expected one exact pi-flag block/);
+      if (mode === "duplicate") assert.match(error.message, /found 2 block/);
+      else assert.match(error.message, /found 0 block/);
+    } finally {
+      host.cleanup();
+    }
+  }
+});
+
+test("reload observes the current chained system prompt and preserves one block", async () => {
+  let suffix = "RESOURCE-A";
+  const host = await createTestHost([
+    {
+      name: "reloadable-system-prompt",
+      factory(pi) {
+        pi.on("before_agent_start", (event) => ({ systemPrompt: `${event.systemPrompt}\n${suffix}` }));
+      },
+    },
+  ]);
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "reload focus");
+  const prompts: string[] = [];
+  host.faux.setResponses([
+    (context) => {
+      prompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("first");
+    },
+    (context) => {
+      prompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("second");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("before reload");
+    suffix = "RESOURCE-B";
+    await host.session.reload();
+    await host.session.prompt("after reload");
+    const focus = focusForHost(host);
+    assert.match(prompts[0] ?? "", /RESOURCE-A/);
+    assert.doesNotMatch(prompts[0] ?? "", /RESOURCE-B/);
+    assert.match(prompts[1] ?? "", /RESOURCE-B/);
+    assert.equal(countOccurrences(prompts[0] ?? "", focus.block), 1);
+    assert.equal(countOccurrences(prompts[1] ?? "", focus.block), 1);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("direct custom-trigger turns abort visibly when active flags lack a run cache", async () => {
+  let signalWasAborted = false;
+  let messagesAfterGuard: unknown;
+  const host = await createTestHost([
+    {
+      name: "direct-trigger-observer",
+      factory(pi) {
+        pi.on("context", (event, ctx) => {
+          signalWasAborted = ctx.signal?.aborted === true;
+          messagesAfterGuard = structuredClone(event.messages);
+        });
+      },
+    },
+  ]);
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "direct trigger focus");
+  host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.sendCustomMessage(
+      { customType: "test/direct", content: "trigger", display: false },
+      { triggerTurn: true },
+    );
+    assert.equal(signalWasAborted, true);
+    assert.ok(Array.isArray(messagesAfterGuard));
+    assert.equal(messagesAfterGuard.length, 1);
+    assert.equal(host.faux.state.callCount, 0);
+    assert.equal(host.faux.getPendingResponseCount(), 1);
+    assert.ok(ui.notifications.some(({ message }) => message.includes("unsupported direct-trigger")));
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("provider-change warning is content-free and only fires across providers with active flags", async () => {
+  const host = await createTestHost([], {
+    faux: {
+      models: [
+        { id: "same-a", contextWindow: 128000, maxTokens: 16384 },
+        { id: "same-b", contextWindow: 128000, maxTokens: 16384 },
+      ],
+    },
+  });
+  const ui = createUiHarness();
+  const other = fauxProvider({
+    api: "other-api",
+    provider: "other-provider",
+    models: [{ id: "other", contextWindow: 128000, maxTokens: 16384 }],
+  });
+  host.modelRuntime.registerNativeProvider(other.provider);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.setModel(other.getModel());
+    await host.session.setModel(host.faux.models[0]);
+    assert.equal(ui.notifications.length, 0);
+
+    appendFlaggedUser(host, "TOP SECRET FLAG TEXT");
+    const sameProviderModel = host.faux.models[1];
+    assert.ok(sameProviderModel);
+    await host.session.setModel(sameProviderModel);
+    assert.equal(ui.notifications.length, 0);
+    await host.session.setModel(other.getModel());
+    assert.equal(ui.notifications.length, 1);
+    const warning = ui.notifications[0];
+    assert.equal(warning?.type, "warning");
+    assert.match(warning?.message ?? "", /1 active flag/);
+    assert.match(warning?.message ?? "", /other-provider/);
+    assert.match(warning?.message ?? "", /tokens/);
+    assert.doesNotMatch(warning?.message ?? "", /TOP SECRET FLAG TEXT/);
+  } finally {
+    host.modelRuntime.unregisterProvider(other.provider.id);
+    host.cleanup();
+  }
+});
+
+test("model downsizing blocks before send and leaves /flag available for recovery", async () => {
+  const host = await createTestHost([], {
+    faux: {
+      models: [
+        { id: "large", contextWindow: 128000, maxTokens: 16384 },
+        { id: "small", contextWindow: 4000, maxTokens: 1000 },
+      ],
+    },
+  });
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "x".repeat(6000));
+  host.faux.setResponses([fauxAssistantMessage("must remain queued")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const small = host.faux.models[1];
+    assert.ok(small);
+    await host.session.setModel(small);
+    assert.equal(ui.notifications.length, 0);
+    await host.session.prompt("blocked after downsize");
+    assert.equal(host.faux.state.callCount, 0);
+    assert.equal(host.faux.getPendingResponseCount(), 1);
+    assert.ok(ui.notifications.some(({ message }) => message.includes("Focus requires")));
+    await runFlag(host, commandContext(host, ui.ui));
+    assert.equal(ui.components.length, 1);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("overflow compaction failure gives active-flag recovery guidance without content", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "PRIVATE FLAG CONTENT");
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await emitHandler(
+      host,
+      "session_compact_failed",
+      { type: "session_compact_failed", reason: "overflow" },
+      commandContext(host, ui.ui),
+    );
+    const notification = ui.notifications.at(-1);
+    assert.equal(notification?.type, "error");
+    assert.match(notification?.message ?? "", /Nothing was truncated/);
+    assert.match(notification?.message ?? "", /\/flag/);
+    assert.doesNotMatch(notification?.message ?? "", /PRIVATE FLAG CONTENT/);
   } finally {
     host.cleanup();
   }
