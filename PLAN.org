@@ -487,15 +487,18 @@ Focused state tests pass.
 ]
 #+end_src
 
-* TODO [#B] 1.2 Implement exact eligible source extraction    :implementation:
+* DONE [#B] 1.2 Implement exact eligible source extraction    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.4
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:27]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:27]
+:CLOSE_REASON: Exact user/assistant source extraction and all StopReason eligibility semantics implemented.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -528,6 +531,20 @@ All eligibility and exact-text tests pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 19,
+    "issue_id": "flag-3ph.4",
+    "author": "pi",
+    "text": "Task 1.2 evidence:\n\n- `extractFlagSource` now handles user strings and text arrays losslessly, preserving block boundaries, whitespace, newlines, Unicode, and lone surrogates; any image rejects the whole prompt.\n- Assistant policy covers all seven StopReason values: pending/deferred reject; stop/length/toolUse/error/aborted require nonempty visible text. All text blocks, including empty separators, are preserved; thinking/tool calls are excluded.\n- `errorMessage` is never copied or synthesized; tool-result and every non-message session entry type reject.\n- Replay resolves eligible assistant sources with stop provenance.\n- Canonical extraction contains no `trim()`.\n\nChecks: focused state tests 11/11 pass; typecheck pass; full package check 16/16 pass; pack surface valid.\n",
+    "created_at": "2026-08-27T22:27:52Z"
   }
 ]
 #+end_src

@@ -53,14 +53,40 @@ export function parseFlagRecord(value: unknown): PiFlagRecordV1 | undefined {
 }
 
 export function extractFlagSource(entry: SessionEntry): FlagSource | undefined {
-  if (entry.type !== "message" || entry.message.role !== "user" || typeof entry.message.content !== "string") {
-    return undefined;
+  if (entry.type !== "message") return undefined;
+  const message = entry.message;
+
+  if (message.role === "user") {
+    const content = message.content;
+    if (typeof content === "string") {
+      return {
+        entryId: entry.id,
+        role: "user",
+        sourceTimestamp: entry.timestamp,
+        textBlocks: [content],
+      };
+    }
+    if (content.some((block) => block.type === "image")) return undefined;
+    const textBlocks = content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+    if (textBlocks.length === 0) return undefined;
+    return {
+      entryId: entry.id,
+      role: "user",
+      sourceTimestamp: entry.timestamp,
+      textBlocks,
+    };
   }
+
+  if (message.role !== "assistant") return undefined;
+  if (message.stopReason === "pending" || message.stopReason === "deferred") return undefined;
+  const textBlocks = message.content.flatMap((block) => (block.type === "text" ? [block.text] : []));
+  if (!textBlocks.some((block) => block.length > 0)) return undefined;
   return {
     entryId: entry.id,
-    role: "user",
+    role: "assistant",
     sourceTimestamp: entry.timestamp,
-    textBlocks: [entry.message.content],
+    textBlocks,
+    assistantStopReason: message.stopReason,
   };
 }
 
