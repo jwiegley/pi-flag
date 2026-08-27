@@ -1,6 +1,745 @@
 #+TITLE: Obr Issues
 #+SEQ_TODO: TODO DOING DRAFT WAIT DEFER NOTE | DONE CANCELED
-#+ISSUE_PREFIX: flag-implementation-plan
+#+ISSUE_PREFIX: flag
+
+* TODO [#B] Implement standalone pi-flag extension    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: epic
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Execute the approved implementation plan at .pi/goals/artifacts/mtbyluhm-ov5ctb/pi-flag-implementation-plan.md.
+
+** Acceptance Criteria
+
+All fifteen plan tasks pass their checks; package is installable; repository is clean; no Pi core changes.
+
+* DONE [#B] 0.1 Add package metadata and strict TypeScript/test baseline    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.1
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:09]
+:ASSIGNEE: pi
+:CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:09]
+:CLOSE_REASON: Package scaffold, exact dependency metadata, security review, lockfile, and baseline checks complete.
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 0.1 exactly.
+
+** Acceptance Criteria
+
+Dependency security evidence is recorded and package scaffold checks pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.1",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:54.216395Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 16,
+    "issue_id": "flag-3ph.1",
+    "author": "pi",
+    "text": "Task 0.1 evidence (2026-08-27, reviewer: pi):\n\nDirect package review:\n\n- `@earendil-works/pi-coding-agent@0.84.3`: required optional host peer + development loader/session APIs; repository `earendil-works/pi`, `packages/coding-agent`; SLSA v1 provenance; registry/pack integrity `sha512-Yr2p9PubrbFZmYEPYI+C8KmZP9xlFuLDnAG64RtU0ZDgrdiXYWa+y7WGyJO5OlqPliOkVCMd9IzVszO3/t0D0w==`; 1,044 packed files inspected; build/test/prepublish scripts only, no install-time script.\n- `@earendil-works/pi-tui@0.84.3`: required optional host peer + selector/Input/keybinding APIs; repository `earendil-works/pi`, `packages/tui`; SLSA v1 provenance; integrity `sha512-fS6OEQKEEALnKa6Uw8LcgZZ+9CWck7f3MQSCETQp6leUgIFwMEDtKmOUnL9nsYm+RIPmy7OmplVxYRbV6hiaFg==`; 172 packed files inspected; build/test/prepublish scripts only, no install-time script.\n- `@earendil-works/pi-ai@0.84.3`: required only for faux-provider/estimator tests; repository `earendil-works/pi`, `packages/ai`; SLSA v1 provenance; integrity `sha512-M0YUV8vNO3y2WwWSyY8ijKJV5W4gkSUixuvk+Z00ZBjsyMfsdXfITsHEwP1UIf09YRWXT6oGn0GlCamt+P32XQ==`; 746 packed files inspected; build/test/prepublish scripts only, no install-time script.\n- `@types/node@22.19.19`: required compile-time Node declarations; DefinitelyTyped `types/node`; no published provenance attestation, explicitly accepted because npm registry signature verification passed; integrity `sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew==`; 83 declaration/license/readme files inspected; no scripts.\n- `typescript@5.9.3`: required no-emit strict typecheck; Microsoft/TypeScript; no published provenance attestation, explicitly accepted because npm registry signature verification passed; integrity `sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==`; 132 compiler/lib/license/readme files inspected; development scripts only, no install-time script.\n\nTransitive review:\n\n- `npm install --ignore-scripts` installed 221 packages; 222-package tree; no lifecycle script executed.\n- `npm audit signatures --json`: `invalid=[]`, `missing=[]`.\n- Development and `--omit=dev` audits: 0 info/low/moderate/high/critical vulnerabilities.\n- `npm ls --all --json`: exit 0.\n- Install-time script inventory has four entries: two copies of `@google/genai@1.52.0` with literal `preinstall: echo 'preinstall: no-op'`; `protobufjs@7.6.5` and `7.6.6` with `postinstall: node scripts/postinstall`. Both protobuf scripts were read in full: they only read package manifests and optionally write a version-scheme warning to stderr; no network or file mutation. All four scripts were suppressed by `--ignore-scripts` and are accepted for development-only dependencies.\n- The coding-agent tarball’s nested shrinkwrap omits integrity on six exact Pi 0.84.3 entries. Registry URLs, signatures, local source identity, SLSA v1 provenance, and published integrities were verified separately for agent-core, ai, client, protocol, telemetry, and tui. `test/package.test.ts` permits only those exact reviewed URLs; all other registry entries require sha512 integrity.\n\nChecks:\n\n- `npm run typecheck`: pass.\n- `npm test`: 3/3 pass.\n- `npm pack --dry-run --json`: only `README.md`, `index.ts`, and `package.json`.\n- `npm run check`: pass.\n- Manifest has zero runtime dependencies and no root lifecycle scripts; peer/dev metadata and lockfile are exact.\n",
+    "created_at": "2026-08-27T22:09:38Z"
+  }
+]
+#+end_src
+
+* TODO [#B] 4.2 Wire input gate and system-prompt projection    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.10
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 4.2 exactly.
+
+** Acceptance Criteria
+
+Exact one-block, stale-prompt, capacity, abort-boundary, and privacy tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.10",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:02.420893Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.10",
+    "depends_on_id": "flag-3ph.6",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:02.420893Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.10",
+    "depends_on_id": "flag-3ph.9",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:02.420893Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 5.1 Add compaction and continuation integration    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.11
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 5.1 exactly.
+
+** Acceptance Criteria
+
+Compaction/continuation/cache tests pass with exact prompts.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.11",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:03.310578Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.11",
+    "depends_on_id": "flag-3ph.10",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:03.310578Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.11",
+    "depends_on_id": "flag-3ph.2",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:03.310578Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 5.2 Add resume/fork/branch integration    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.12
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 5.2 exactly.
+
+** Acceptance Criteria
+
+Resume/fork/branch/rewind/corruption tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.12",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:04.293824Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.12",
+    "depends_on_id": "flag-3ph.11",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:04.293824Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 6.1 Complete README and package contract    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.13
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 6.1 exactly.
+
+** Acceptance Criteria
+
+README/package tests and dry-run surface pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.13",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:05.268971Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.13",
+    "depends_on_id": "flag-3ph.12",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:05.268971Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 6.2 Run local and packed-package Pi smoke    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.14
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 6.2 exactly.
+
+** Acceptance Criteria
+
+Source/packed install and required manual matrices have evidence.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.14",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:05.942713Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.14",
+    "depends_on_id": "flag-3ph.13",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:05.942713Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 7.1 Run final audit and close OBR    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.15
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 7.1 exactly.
+
+** Acceptance Criteria
+
+All final checks pass, OBR closes, and worktree is clean.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.15",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:06.743305Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.15",
+    "depends_on_id": "flag-3ph.14",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:06.743305Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 0.2 Establish public-API faux-provider test host    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.2
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 0.2 exactly.
+
+** Acceptance Criteria
+
+Public exported APIs load the extension with faux provider and isolated state.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.2",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:54.899924Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.2",
+    "depends_on_id": "flag-3ph.1",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:54.899924Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 1.1 Implement V1 record parser and replay reducer    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.3
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 1.1 exactly.
+
+** Acceptance Criteria
+
+Focused state tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.3",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:55.634597Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.3",
+    "depends_on_id": "flag-3ph.1",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:55.634597Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 1.2 Implement exact eligible source extraction    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.4
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 1.2 exactly.
+
+** Acceptance Criteria
+
+All eligibility and exact-text tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.4",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:56.458454Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.4",
+    "depends_on_id": "flag-3ph.3",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:56.458454Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 2.1 Implement deterministic projection    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.5
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 2.1 exactly.
+
+** Acceptance Criteria
+
+Projection is stable, lossless, and sentinel-verified.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.5",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:57.361374Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.5",
+    "depends_on_id": "flag-3ph.4",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:57.361374Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 2.2 Implement capacity assessment    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.6
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 2.2 exactly.
+
+** Acceptance Criteria
+
+Focus/final capacity boundary tests pass without stale-prompt reads.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.6",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:58.441679Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.6",
+    "depends_on_id": "flag-3ph.5",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:58.441679Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 3.1 Implement selector rendering and filtering    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.7
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 14:56]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 3.1 exactly.
+
+** Acceptance Criteria
+
+Selector, accessibility, Unicode, terminal, and keybinding tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.7",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:56:59.578827Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.7",
+    "depends_on_id": "flag-3ph.4",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:59.578827Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.7",
+    "depends_on_id": "flag-3ph.6",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:56:59.578827Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 3.2 Implement toggle, privacy, and recovery states    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.8
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 3.2 exactly.
+
+** Acceptance Criteria
+
+Multi-toggle/privacy/recovery tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.8",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:00.623915Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.8",
+    "depends_on_id": "flag-3ph.7",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:00.623915Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
+
+* TODO [#B] 4.1 Wire session replay and /flag    :implementation:
+:PROPERTIES:
+:OBR_SCHEMA_VERSION: 17
+:ID:       flag-3ph.9
+:LABELS:   ["implementation","pi-flag"]
+:ISSUE_TYPE: task
+:CREATED:  [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 14:57]
+:CREATED_BY: pi
+:SOURCE_REPO: pi-flag
+:SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
+:ORIGINAL_SIZE: 0
+:END:
+
+Implement plan Task 4.1 exactly.
+
+** Acceptance Criteria
+
+Command/lifecycle integration tests pass.
+
+** Dependencies
+
+#+begin_src json
+[
+  {
+    "issue_id": "flag-3ph.9",
+    "depends_on_id": "flag-3ph",
+    "type": "parent-child",
+    "created_at": "2026-08-27T21:57:01.494661Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.9",
+    "depends_on_id": "flag-3ph.4",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:01.494661Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  },
+  {
+    "issue_id": "flag-3ph.9",
+    "depends_on_id": "flag-3ph.8",
+    "type": "blocks",
+    "created_at": "2026-08-27T21:57:01.494661Z",
+    "created_by": "pi",
+    "metadata": "{}",
+    "thread_id": ""
+  }
+]
+#+end_src
 
 * DONE [#B] Produce comprehensive pi-flag implementation plan    :planning:research:
 :PROPERTIES:
