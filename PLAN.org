@@ -363,15 +363,18 @@ All final checks pass, OBR closes, and worktree is clean.
 ]
 #+end_src
 
-* TODO [#B] 0.2 Establish public-API faux-provider test host    :implementation:
+* DONE [#B] 0.2 Establish public-API faux-provider test host    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.2
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 15:16]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 15:16]
+:CLOSE_REASON: Public faux-provider host loads actual package and observes extension event without network or user state.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -404,6 +407,20 @@ Public exported APIs load the extension with faux provider and isolated state.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 17,
+    "issue_id": "flag-3ph.2",
+    "author": "pi",
+    "text": "Task 0.2 evidence:\n\n- Added reusable `test/support/host.ts` using only root exports from `@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent`.\n- Host creates a temp cwd/agent root, in-memory settings/session, network-disabled `ModelRuntime`, native faux provider, and `DefaultResourceLoader` with the actual package `index.ts` path.\n- Added `test/extension.test.ts`: loader reports no errors, actual resolved package path is present, public `session_start` dispatch reaches an inline observer, and faux call count remains zero.\n- Cleanup disposes the session, unregisters faux, and removes temp state.\n- No Pi internal test imports, endpoint/auth environment, user config/session path, credentials, or network provider call.\n\nChecks: focused extension test 1/1 pass; typecheck pass; full package check 5/5 pass; dry-run package surface unchanged.\n",
+    "created_at": "2026-08-27T22:16:35Z"
   }
 ]
 #+end_src
