@@ -9,14 +9,21 @@
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 14:56]
+:MODIFIED: [2026-08-27 Thu 17:38]
 :CREATED_BY: pi
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
 :END:
 
-Execute the approved implementation plan at .pi/goals/artifacts/mtbyluhm-ov5ctb/pi-flag-implementation-plan.md.
+Execute the approved implementation plan at `.pi/goals/artifacts/mtbyluhm-ov5ctb/pi-flag-implementation-plan.md`.
+
+## Success Criteria
+
+- All fifteen implementation tasks satisfy their focused checks and evidence contracts.
+- The standalone source and packed package install through Pi and expose `/flag`.
+- Required session, compaction, capacity, privacy, accessibility, and isolation guarantees are verified.
+- The repository is clean, OBR is closed and synchronized, and Pi core/package source is unchanged.
 
 ** Acceptance Criteria
 
@@ -224,7 +231,7 @@ Compaction/continuation/cache tests pass with exact prompts.
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 16:58]
+:MODIFIED: [2026-08-27 Thu 17:50]
 :ASSIGNEE: pi
 :CREATED_BY: pi
 :FINISHED: [2026-08-27 Thu 16:58]
@@ -275,6 +282,13 @@ Resume/fork/branch/rewind/corruption tests pass.
     "author": "pi",
     "text": "Task 5.2 evidence:\n\n- Persistent `SessionManager.create` session writes source/marker, closes, reopens the same JSONL/header ID, and restores one exact focus block containing the original text.\n- Pre-assistant user+flag entries have a named but absent session file and selector label `not-yet-saved`; appending the first assistant flushes the file and changes the label to `durable`.\n- Full-log replay projects a flagged source from an abandoned branch after rewinding the active leaf before the marker; selector reports it active/off-branch while active branch excludes it.\n- `SessionManager.forkFrom` copies history/records under a new ID and produces no pi-flag block. A copied/imported file retaining the source header ID restores the flag and exact text.\n- Existing dangling-record integration blocks ordinary input and tombstones through `/flag`.\n- All persistent files, copied sessions, agent dirs, and roots are isolated under test temp directories and removed; no user config/session path is touched.\n\nChecks: focused extension tests 28/28 pass; typecheck pass; full `npm run check` passes all 71 discovered tests including support/fixture modules; pack surface valid.\n",
     "created_at": "2026-08-27T23:58:44Z"
+  },
+  {
+    "id": 34,
+    "issue_id": "flag-3ph.12",
+    "author": "pi",
+    "text": "Final-review branch-summary overlap evidence:\n\n- Added a real `AgentSession.navigateTree(..., { summarize: true })` integration with a deliberately delayed `session_before_tree` summary.\n- While summarization is pending, `session.isIdle` remains true by Pi contract. `/flag` opens, displays the full tree, completes first-use consent, and synchronously appends a root-message marker.\n- The marker is present before summary release. Navigation then creates the branch summary without cancellation or mutation of the marker.\n- Full-log replay remains active after navigation; the next faux user run receives one exact block containing the flagged root source.\n- README documents this allowed append-only overlap and why no sticky tree-busy guard is used.\n\nFocused overlap test and typecheck pass; no real provider/network.\n",
+    "created_at": "2026-08-28T00:50:30Z"
   }
 ]
 #+end_src
@@ -348,7 +362,7 @@ README/package tests and dry-run surface pass.
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 17:33]
+:MODIFIED: [2026-08-27 Thu 17:57]
 :ASSIGNEE: pi
 :CREATED_BY: pi
 :FINISHED: [2026-08-27 Thu 17:33]
@@ -399,18 +413,26 @@ Source/packed install and required manual matrices have evidence.
     "author": "pi",
     "text": "Task 6.2 evidence (Darwin 25.5.0 arm64, Pi 0.84.3, tmux 3.7c):\n\nInstall/package smoke:\n\n- `npm ci --ignore-scripts`: 221 packages, audit 0; `npm run check`: pass.\n- Isolated source agent root: actual `pi install /Users/johnw/src/pi-flag`, `pi list`, and no-session/no-tools/no-skills/no-prompts/no-themes/no-context RPC `get_commands` all pass. RPC returns extension command `flag` from source `index.ts`.\n- Current `npm pack --json` tarball installed from a safe temp working directory. Source and installed manifests compare byte-for-byte as JSON; clean temp `npm ls --depth=0` reports only `pi-flag@0.1.0`; runtime audit has 0 vulnerabilities.\n- Isolated packed agent root: actual `pi install <temp>/node_modules/pi-flag`, `pi list`, and restricted RPC `get_commands` pass; `flag` resolves from packed `index.ts`.\n- Smoke caught an unsafe `npm init --prefix` behavior that had initialized the source manifest. The injected fields were detected by `npm ls`/package tests, removed through an anchored edit, and the clean packed root was rebuilt with `cd <temp> && npm init`; source manifest/lock now match the committed contract.\n\nAvailable TUI/manual evidence (local faux provider only, no endpoint/auth/paid token):\n\n- Source and clean packed installs both start in tmux and open `/flag` over a persisted two-message session.\n- Custom action bindings (`ctrl+p/n`, `ctrl+b/f`, `ctrl+x`, `ctrl+g`, `ctrl+t`) are shown and work; displaced default Escape leaves the selector open; configured cancel closes it.\n- Bracketed paste `ユニ\\ncode` becomes `ユニcode`, filters the correct row, and preserves Unicode.\n- First activation shows the exact privacy notice; acceptance flags the user row. A second row toggles in the same selector. Plain capture shows two `[flagged]` labels and one ASCII `>` focus row.\n- `flagged` mode, `/tree` without pi-flag decoration, post-cancel editor input and submitted local-faux response all pass.\n- Source session exits/reopens with both flags. With isolated `keepRecentTokens: 1`, two actual `/compact` operations succeed; reopening `/flag` still shows both original entries flagged.\n- Live 20x5 smoke initially exposed footer clipping. OBR `flag-3ph.7` was reopened; selector now budgets two host footer rows. Source and packed captures at 20x5 show query + focused row + help. 40x10 shows title/query/summary/rows/detail/help.\n- Named `^accessibility:` subset: 5/5 pass.\n- Automated integration covers model downsizing recovery, manual-compaction guard/failure, off-branch/rewind, and branch/fork behavior that cannot be safely forced through this unattended TUI.\n\nTerminal matrix:\n\n| Host / protocol | Result | Evidence / limitation |\n|---|---|---|\n| macOS Darwin, tmux `tmux-256color` legacy path | PASS | Source + packed open, custom keys, Unicode bracketed paste, multi-toggle, cancel/no trap, 80x24/40x10/20x5, repeated compaction/resume. |\n| macOS Terminal.app native legacy | UNVERIFIED | Headless session cannot attach a native Terminal.app client; no native-Terminal portability claim. |\n| macOS Kitty-capable terminal (Ghostty/Kitty CSI-u) | UNVERIFIED manually | Automated selector tests cover CSI-u printable and functional control sequences; no attached Kitty-capable client, so no manual claim. |\n| Linux legacy/Kitty | UNVERIFIED | Host unavailable; blocks Linux portability/release claim. |\n| Windows Terminal + PowerShell | UNVERIFIED | Host unavailable; blocks Windows portability/release claim. |\n| WSL under Windows Terminal | UNVERIFIED | Host unavailable; blocks WSL portability/release claim. |\n| Multiplexer tmux on available macOS host | PASS | Plain and ANSI captures recorded for normal/narrow layouts; focus/cancel and resize verified. |\n\nArtifacts were recorded under `/tmp/pi-flag-smoke.AuGyUJ` during review (RPC JSONL, install/list output, source/packed normal and narrow captures, privacy, multi-toggle, tree, compaction, resume, accessibility output). They are removed after this OBR evidence is committed. No cross-platform or publication claim is made from unverified rows.\n",
     "created_at": "2026-08-28T00:33:49Z"
+  },
+  {
+    "id": 35,
+    "issue_id": "flag-3ph.14",
+    "author": "pi",
+    "text": "Final-review branch-summary overlap evidence:\n\n- Added a real `AgentSession.navigateTree(..., { summarize: true })` integration with a deliberately delayed `session_before_tree` summary.\n- While summarization is pending, `session.isIdle` remains true by Pi contract. `/flag` opens, displays the full tree, completes first-use consent, and synchronously appends a root-message marker.\n- The marker is present before summary release. Navigation then creates the branch summary without cancellation or mutation of the marker.\n- Full-log replay remains active after navigation; the next faux user run receives one exact block containing the flagged root source.\n- README documents this allowed append-only overlap and why no sticky tree-busy guard is used.\n\nFocused overlap test and typecheck pass; no real provider/network.\n",
+    "created_at": "2026-08-28T00:57:14Z"
   }
 ]
 #+end_src
 
-* TODO [#B] 7.1 Run final audit and close OBR    :implementation:
+* DOING [#B] 7.1 Run final audit and close OBR    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.15
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 17:35]
+:ASSIGNEE: pi
 :CREATED_BY: pi
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
@@ -850,11 +872,11 @@ Selector, accessibility, Unicode, terminal, and keybinding tests pass.
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 16:01]
+:MODIFIED: [2026-08-27 Thu 17:49]
 :ASSIGNEE: pi
 :CREATED_BY: pi
-:FINISHED: [2026-08-27 Thu 16:01]
-:CLOSE_REASON: Single-flight toggles, inline privacy consent, error and dangling recovery states implemented.
+:FINISHED: [2026-08-27 Thu 17:49]
+:CLOSE_REASON: Privacy confirmation now requires full visible disclosure and controls; compact mode is decline-only until resize.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -901,6 +923,20 @@ Multi-toggle/privacy/recovery tests pass.
     "author": "pi",
     "text": "Task 3.2 evidence:\n\n- Added single-flight async toggle state with visible `[pending]`, duplicate action suppression, and stable selected entry during/after completion.\n- Added exact inline first-activation privacy notice; accept proceeds, decline performs no toggle, and a subsequent configured cancel exits.\n- Toggle failures render inline without closing or moving selection.\n- Active dangling diagnostic rows can unflag without privacy gating; inactive diagnostic activation rejects locally.\n- Flagged-only removal clamps to the nearest remaining row.\n- Multiple rows can be toggled in one selector invocation; configured cancel remains available and disposed selectors ignore later input.\n\nChecks: focused selector tests 14/14 pass; typecheck pass; full `npm run check` 43/43 pass; pack surface valid.\n",
     "created_at": "2026-08-27T23:01:57Z"
+  },
+  {
+    "id": 32,
+    "issue_id": "flag-3ph.8",
+    "author": "pi",
+    "text": "Reopened: Final source audit found 20x5 privacy wrapping could clip configured accept/decline help.",
+    "created_at": "2026-08-28T00:39:02Z"
+  },
+  {
+    "id": 33,
+    "issue_id": "flag-3ph.8",
+    "author": "pi",
+    "text": "Final review privacy fix:\n\n- Confirmation is now disabled unless the complete wrapped disclosure, title, and untruncated configured accept/decline controls all fit the current width/available rows.\n- Too-small terminals show `[resize required]` and one configured decline key; confirm is ignored. Resizing and rendering the full notice enables confirmation.\n- README documents this behavior.\n- Selector tests prove 20x5 compact privacy cannot toggle, decline remains visible, full-size render enables one activation, and cancel/no-toggle still works.\n\nFocused privacy/selector checks and typecheck pass.\n",
+    "created_at": "2026-08-28T00:49:45Z"
   }
 ]
 #+end_src

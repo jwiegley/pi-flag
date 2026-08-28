@@ -30,7 +30,6 @@ type RuntimeState = {
   manualCompactionActive: boolean;
   hasCurrentSessionRecords: boolean;
   run?: {
-    generation: number;
     focus: SerializedFocus;
     expandedInputTokens: number;
     blocked: boolean;
@@ -48,7 +47,6 @@ export default function piFlag(pi: ExtensionAPI): void {
     manualCompactionActive: false,
     hasCurrentSessionRecords: false,
   };
-  let runGeneration = 0;
 
   const refreshState = (ctx: ExtensionContext): void => {
     const entries = ctx.sessionManager.getEntries();
@@ -231,7 +229,6 @@ export default function piFlag(pi: ExtensionAPI): void {
     }
     const focus = state.serialized;
     state.run = {
-      generation: ++runGeneration,
       focus,
       expandedInputTokens: estimateInputTokens(event.prompt, event.images),
       blocked: false,

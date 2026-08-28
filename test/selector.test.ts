@@ -54,8 +54,12 @@ function snapshot(rows: readonly FlagSelectorRow[]): FlagSelectorSnapshot {
   };
 }
 
-function createTui(rows = 24): { tui: TUI; terminal: { rows: number }; renders(): number } {
-  const terminal = { rows };
+function createTui(rows = 24): {
+  tui: TUI;
+  terminal: { rows: number; columns: number };
+  renders(): number;
+} {
+  const terminal = { rows, columns: 80 };
   let renderCount = 0;
   const tui = {
     terminal,
@@ -75,7 +79,7 @@ function createSelector(
     onToggle?: FlagSelectorOptions["onToggle"];
     onClose?: () => void;
   } = {},
-): { selector: FlagSelector; terminal: { rows: number }; renders(): number } {
+): { selector: FlagSelector; terminal: { rows: number; columns: number }; renders(): number } {
   const tui = createTui(options.rows);
   const keybindings = options.keybindings ?? new KeybindingsManager(TUI_KEYBINDINGS);
   setKeybindings(keybindings);
@@ -180,11 +184,13 @@ test("accessibility: width and narrow-terminal fallbacks stay bounded", () => {
     [1, 3],
   ] as const) {
     terminal.rows = height;
+    terminal.columns = width;
     const lines = selector.render(width);
     assert.ok(lines.length <= height);
     for (const line of lines) assert.ok(visibleWidth(line) <= width, `${width} columns: ${line}`);
   }
   terminal.rows = 5;
+  terminal.columns = 20;
   const compact = selector.render(20).map(stripTerminalSequences);
   assert.equal(compact.length, 3);
   assert.match(compact[0] ?? "", /Filter/);
@@ -318,7 +324,7 @@ test("requires inline privacy consent only before the first activation", async (
   const initial = snapshot([row("entry", "2026-01-01T00:00:01.000Z", "sensitive text")]);
   const toggles: Array<{ entryId: string; active: boolean }> = [];
   let closes = 0;
-  const { selector } = createSelector(initial, {
+  const { selector, terminal } = createSelector(initial, {
     needsPrivacyConsent: true,
     onToggle: async (entryId, active) => {
       toggles.push({ entryId, active });
@@ -336,6 +342,17 @@ test("requires inline privacy consent only before the first activation", async (
   assert.match(privacy, /resends flagged text in full/);
   assert.match(privacy, /provider changes/);
   assert.match(privacy, /does not erase\s+session history or prior provider requests/);
+  terminal.rows = 5;
+  terminal.columns = 20;
+  const compactPrivacy = selector.render(20).map(stripTerminalSequences);
+  assert.equal(compactPrivacy.length, 3);
+  assert.match(compactPrivacy[1] ?? "", /resize required/);
+  assert.match(compactPrivacy[2] ?? "", /decline/);
+  selector.handleInput("\r");
+  assert.deepEqual(toggles, []);
+  terminal.rows = 24;
+  terminal.columns = 100;
+  selector.render(100);
 
   selector.handleInput("\x1b");
   assert.deepEqual(toggles, []);
@@ -343,6 +360,7 @@ test("requires inline privacy consent only before the first activation", async (
   assert.doesNotMatch(selector.render(100).map(stripTerminalSequences).join("\n"), /resends flagged text in full/);
 
   selector.handleInput("\r");
+  selector.render(100);
   selector.handleInput("\r");
   await nextTurn();
   assert.deepEqual(toggles, [{ entryId: "entry", active: true }]);

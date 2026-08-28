@@ -58,7 +58,7 @@ Before the first activation in a session, the selector requires this acknowledge
 
 > pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.
 
-Declining performs no toggle. After acknowledgement, several entries can be managed without closing the selector.
+Declining performs no toggle. After acknowledgement, several entries can be managed without closing the selector. If the terminal is too small to display the complete notice and configured controls, the selector shows `[resize required]` and ignores confirmation until the full disclosure is visible.
 
 When active flags cross to a different model provider, pi-flag emits a content-free warning containing only the flag count, estimated token cost, and new provider. Same-provider model changes and sessions without flags do not warn.
 
@@ -86,6 +86,7 @@ Flag operations append validated `pi-flag/marker` custom records containing the 
 - `/new`, `/fork`, `/clone`, and CLI `--fork` create a new ID. Copied old-ID marker records are inert.
 - `--no-session` works only for the process lifetime and is labeled `ephemeral`.
 - A persisted session before its first assistant flush is labeled `not-yet-saved`; it becomes `durable` after the session file exists.
+- A `/flag` toggle may complete while branch summarization is pending because it is a synchronous append-only, session-global metadata event. It neither cancels nor rewrites the summary; the next input replays the full log. No sticky tree-busy flag is used because a tree operation can be cancelled before a terminal tree event.
 
 Malformed marker records produce diagnostics and no invented state. A valid active record whose source is missing or no longer eligible blocks ordinary input without silently omitting the flag; `/flag` remains available to append its inactive tombstone.
 

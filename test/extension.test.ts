@@ -81,7 +81,7 @@ function createUiHarness(onOpen?: (component: TestComponent) => Promise<void> | 
   const overlays: Array<boolean | undefined> = [];
   const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
   setKeybindings(keybindings);
-  const tui = { terminal: { rows: 24 }, requestRender() {} } as unknown as TUI;
+  const tui = { terminal: { rows: 24, columns: 100 }, requestRender() {} } as unknown as TUI;
 
   const implementation = {
     notify(message: string, type?: string) {
@@ -359,6 +359,7 @@ test("appends, rescans, and preserves several toggles in one selector", async ()
     const otherId = initialId === firstId ? secondId : firstId;
 
     selector.handleInput("\r");
+    selector.render(100);
     selector.handleInput("\r");
     await nextTurn();
     assert.equal(selector.getSelectedEntryId(), initialId);
@@ -1296,5 +1297,83 @@ test("forked session IDs ignore copied flags while imported same-ID files restor
     rmSync(sourceRoot, { recursive: true, force: true });
     rmSync(forkRoot, { recursive: true, force: true });
     rmSync(importRoot, { recursive: true, force: true });
+  }
+});
+
+test("allows an append-only flag toggle while branch summarization is pending", async () => {
+  let markSummaryStarted = () => {};
+  const summaryStarted = new Promise<void>((resolve) => {
+    markSummaryStarted = resolve;
+  });
+  let releaseSummary = () => {};
+  const summaryRelease = new Promise<void>((resolve) => {
+    releaseSummary = resolve;
+  });
+  const host = await createTestHost([
+    {
+      name: "delayed-branch-summary",
+      factory(pi) {
+        pi.on("session_before_tree", async () => {
+          markSummaryStarted();
+          await summaryRelease;
+          return { summary: { summary: "deterministic branch summary", details: { source: "test" } } };
+        });
+      },
+    },
+  ]);
+  const manager = host.sessionManager;
+  const rootId = manager.appendMessage({ role: "user", content: "ROOT OVERLAP SOURCE", timestamp: 1 });
+  const commonId = manager.appendMessage(fauxAssistantMessage("common response"));
+  manager.appendMessage({ role: "user", content: "old branch", timestamp: 2 });
+  const oldLeafId = manager.appendMessage(fauxAssistantMessage("old response"));
+  manager.branch(commonId);
+  manager.appendMessage({ role: "user", content: "branch being summarized", timestamp: 3 });
+  manager.appendMessage(fauxAssistantMessage("new response"));
+  host.session.state.messages = manager.buildSessionContext().messages;
+  const ui = createUiHarness(async (component) => {
+    const selector = requireFlagSelector(component);
+    selector.handleInput("ROOT OVERLAP SOURCE");
+    assert.equal(selector.getSelectedEntryId(), rootId);
+    selector.handleInput("\r");
+    selector.render(100);
+    selector.handleInput("\r");
+    await nextTurn();
+    selector.handleInput("\x1b");
+  });
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const navigation = host.session.navigateTree(oldLeafId, { summarize: true });
+    await summaryStarted;
+    assert.equal(host.session.isIdle, true);
+    await runFlag(host, commandContext(host, ui.ui));
+    const marker = manager
+      .getEntries()
+      .find(
+        (entry): entry is CustomSessionEntry =>
+          entry.type === "custom" &&
+          entry.customType === FLAG_RECORD_TYPE &&
+          parseFlagRecord(entry.data)?.targetEntryId === rootId,
+      );
+    assert.ok(marker);
+    releaseSummary();
+    const result = await navigation;
+    assert.equal(result.cancelled, false);
+    assert.equal(result.summaryEntry?.summary, "deterministic branch summary");
+    assert.equal(replayFlags(manager.getEntries(), manager.getSessionId()).active.has(rootId), true);
+
+    let systemPrompt = "";
+    host.faux.setResponses([
+      (context) => {
+        systemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("after overlap");
+      },
+    ]);
+    await host.session.prompt("after overlap");
+    const focus = focusForHost(host);
+    assert.equal(countOccurrences(systemPrompt, focus.block), 1);
+    assert.match(systemPrompt, /ROOT OVERLAP SOURCE/);
+  } finally {
+    releaseSummary();
+    host.cleanup();
   }
 });

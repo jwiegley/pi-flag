@@ -7,6 +7,7 @@ import {
   type Keybinding,
   type KeybindingsManager,
   truncateToWidth,
+  visibleWidth,
   type TUI,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
@@ -43,6 +44,8 @@ export type FlagSelectorOptions = {
 
 const MODES: readonly FlagSelectorMode[] = ["all", "user", "assistant", "flagged"];
 const MAX_VISIBLE_ROWS = 8;
+const PRIVACY_NOTICE =
+  "pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.";
 
 export class FlagSelector implements Component, Focusable {
   private readonly tui: TUI;
@@ -116,7 +119,7 @@ export class FlagSelector implements Component, Focusable {
       if (this.keybindings.matches(data, "tui.select.cancel")) {
         this.privacyEntryId = undefined;
         this.tui.requestRender();
-      } else if (this.keybindings.matches(data, "tui.select.confirm")) {
+      } else if (this.keybindings.matches(data, "tui.select.confirm") && this.privacyFits()) {
         const row = this.allRows.find(({ entryId }) => entryId === this.privacyEntryId);
         this.privacyEntryId = undefined;
         this.needsPrivacyConsent = false;
@@ -332,22 +335,35 @@ export class FlagSelector implements Component, Focusable {
     this.closed = true;
   }
 
+  private privacyFits(width = this.tui.terminal.columns): boolean {
+    const maxLines = Math.max(1, this.tui.terminal.rows - 2);
+    const noticeLines = wrapTextWithAnsi(PRIVACY_NOTICE, Math.max(1, width));
+    const helpText = `${this.keys("tui.select.confirm")} accept · ${this.keys("tui.select.cancel")} decline`;
+    return maxLines >= noticeLines.length + 2 && visibleWidth(helpText) <= width;
+  }
+
   private renderPrivacy(width: number): string[] {
     const maxLines = Math.max(1, this.tui.terminal.rows - 2);
-    const notice =
-      "pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.";
-    const lines = [
-      this.fit(this.theme.bold("pi-flag — privacy confirmation"), width),
-      ...wrapTextWithAnsi(notice, Math.max(1, width)),
-      this.fit(
-        this.theme.fg(
-          "muted",
-          `${this.keys("tui.select.confirm")} accept · ${this.keys("tui.select.cancel")} decline`,
-        ),
-        width,
-      ),
-    ];
-    return lines.slice(0, maxLines).map((line) => this.fit(line, width));
+    const title = this.fit(this.theme.bold("pi-flag — privacy confirmation"), width);
+    const noticeLines = wrapTextWithAnsi(PRIVACY_NOTICE, Math.max(1, width));
+    const helpText = `${this.keys("tui.select.confirm")} accept · ${this.keys("tui.select.cancel")} decline`;
+    const canConfirm = this.privacyFits(width);
+    if (canConfirm) {
+      return [
+        title,
+        ...noticeLines.map((line) => this.fit(line, width)),
+        this.fit(this.theme.fg("muted", helpText), width),
+      ];
+    }
+    const resizeRequired = this.fit(this.theme.fg("warning", "[resize required]"), width);
+    if (maxLines === 1) return [resizeRequired];
+    const cancelKeys = this.keys("tui.select.cancel");
+    const fullDecline = `${cancelKeys} decline`;
+    const firstCancel = this.keybindings.getKeys("tui.select.cancel")[0] ?? "cancel";
+    const declineText = visibleWidth(fullDecline) <= width ? fullDecline : `${firstCancel} decline`;
+    const decline = this.fit(this.theme.fg("muted", declineText), width);
+    if (maxLines === 2) return [resizeRequired, decline];
+    return [title, resizeRequired, decline];
   }
 
   private renderRow(row: FlagSelectorRow, selected: boolean, width: number): string {

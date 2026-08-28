@@ -99,6 +99,8 @@ test("README states the complete compatibility and behavior contract", () => {
   }
   assert.match(readme, /resends flagged text in full/);
   assert.match(readme, /does not erase session history or prior provider requests/);
+  assert.match(readme, /\[resize required\].*ignores confirmation/);
+  assert.match(readme, /branch summarization is pending/);
   assert.match(readme, /Nothing was truncated|nothing was truncated/);
   assert.match(readme, /zero build step|no build step/);
   assert.match(readme, /zero runtime dependencies|no runtime dependencies/);
