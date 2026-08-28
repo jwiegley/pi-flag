@@ -433,7 +433,7 @@ Source/packed install and required manual matrices have evidence.
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 18:02]
+:MODIFIED: [2026-08-27 Thu 18:03]
 :ASSIGNEE: pi
 :CREATED_BY: pi
 :FINISHED: [2026-08-27 Thu 18:00]
@@ -491,6 +491,13 @@ All final checks pass, OBR closes, and worktree is clean.
     "author": "pi",
     "text": "Correction to final audit evidence: fifteen reviewable implementation/review-fix commits precede the final OBR-closure commit; the complete implementation range contains sixteen commits. The earlier “fourteen” count was recorded before the final independent-review fixes were committed. All commits remain atomic and the diff/status evidence is unchanged.\n",
     "created_at": "2026-08-28T01:02:23Z"
+  },
+  {
+    "id": 38,
+    "issue_id": "flag-3ph.15",
+    "author": "pi",
+    "text": "Clarification: the commit counts above classify fifteen implementation/review-fix commits plus the OBR-closure commit. Subsequent `PLAN.org`-only evidence corrections are intentionally excluded from that implementation count; use `git rev-list e67136aef57618e9abf388d89c0d0766da704771..HEAD` for the total Git range count.\n",
+    "created_at": "2026-08-28T01:03:06Z"
   }
 ]
 #+end_src
