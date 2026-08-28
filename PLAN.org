@@ -2,15 +2,17 @@
 #+SEQ_TODO: TODO DOING DRAFT WAIT DEFER NOTE | DONE CANCELED
 #+ISSUE_PREFIX: flag
 
-* TODO [#B] Implement standalone pi-flag extension    :implementation:
+* DONE [#B] Implement standalone pi-flag extension    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: epic
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 17:38]
+:MODIFIED: [2026-08-27 Thu 18:00]
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 18:00]
+:CLOSE_REASON: Standalone pi-flag extension implemented and verified through all fifteen approved plan tasks.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -424,16 +426,18 @@ Source/packed install and required manual matrices have evidence.
 ]
 #+end_src
 
-* DOING [#B] 7.1 Run final audit and close OBR    :implementation:
+* DONE [#B] 7.1 Run final audit and close OBR    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.15
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 17:35]
+:MODIFIED: [2026-08-27 Thu 18:00]
 :ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 18:00]
+:CLOSE_REASON: All final checks, security/diff audits, independent-review fixes, smoke evidence, and requirement reconciliation pass.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -466,6 +470,20 @@ All final checks pass, OBR closes, and worktree is clean.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 36,
+    "issue_id": "flag-3ph.15",
+    "author": "pi",
+    "text": "Task 7.1 final audit evidence:\n\nChecks and package:\n\n- Fresh `npm ci --ignore-scripts`: 221 packages; audit 0.\n- Final `npm run typecheck`: pass.\n- Final `npm test`: all 73 discovered tests pass (29 extension scenarios, 13 focus, 14 selector, 11 state, 4 package, plus support/fixture modules).\n- Final `npm pack --dry-run --json`: exact six-file surface (`README.md`, `index.ts`, `package.json`, `src/focus.ts`, `src/selector.ts`, `src/state.ts`), no bundled dependencies.\n- Final `npm run check`: pass.\n- `npm audit signatures`: invalid=[], missing=[]; development and runtime audits: 0 vulnerabilities. Install-script inventory remains the four reviewed/suppressed entries from Task 0.1.\n- Package remains private, UNLICENSED, zero-runtime-dependency, exact-dev-pinned, and lifecycle-free.\n\nImplementation/security audit:\n\n- Full production files reread. No explicit `any`, enum, namespace, dynamic/inline import, parameter property, raw key check, terminal listener/raw-mode ownership, unvalidated marker data, arbitrary-object JSON serialization, context-message injection, hidden truncation, runtime dependency, lifecycle script, or Pi core change.\n- Sole `getSystemPrompt()` call is the context-time final guard; input admission cannot read stale effective prompt.\n- Marker journal stores no flagged text; notifications contain IDs/counts/tokens/provider only where relevant; errorMessage/thinking/tool/image content exclusions match contract.\n- Git diff from implementation baseline `e67136aef57618e9abf388d89c0d0766da704771` passes `--check`; fourteen reviewable implementation commits precede final closure.\n- Pi repository remains exactly `4e494929998d6bc4fccf75e0a233f727db4b70ee` with no `packages` diff.\n\nIndependent review findings resolved:\n\n1. Privacy confirmation now computes fit from current terminal rows/columns and configured key labels. Confirm is ignored unless the complete disclosure and untruncated accept/decline controls are visible. Compact mode is `[resize required]` plus a configured decline key; tests and README cover it.\n2. A delayed real `navigateTree(..., { summarize: true })` integration proves `/flag` can append while branch summarization is pending, the summary completes unchanged, full-log replay remains active, and the next faux run projects one exact block. README and OBR tasks 5.2/6.2 document the allowed append-only overlap and residual design.\n\nSmoke/limits:\n\n- Actual isolated source and clean packed `pi install`, `pi list`, restricted RPC `get_commands`, source+packed TUI, local faux response, multi-toggle, privacy, custom keys, Unicode bracketed paste, `/tree`, two compactions, exit/resume, 40x10 and fixed 20x5 all passed; temp roots/tarballs were removed.\n- macOS/tmux row passes. Terminal.app, manual Kitty client, Linux, Windows, and WSL remain explicitly UNVERIFIED; package is private/unpublished and README makes no portability/release claim for those rows.\n- No real provider/API key, user config/session path, remote, push, PR, publication, or release was used.\n\nOBR lint/sync and dependency-cycle checks pass. Final closure should leave only `PLAN.org` changed, then a final explicit commit and clean status verification.\n",
+    "created_at": "2026-08-28T01:00:45Z"
   }
 ]
 #+end_src
