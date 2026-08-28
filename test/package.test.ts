@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const packageJsonPath = new URL("../package.json", import.meta.url);
+const readmePath = new URL("../README.md", import.meta.url);
 const lockfilePath = new URL("../package-lock.json", import.meta.url);
 const packageRoot = new URL("..", import.meta.url);
 
@@ -76,6 +77,35 @@ test("package metadata matches the approved contract", () => {
   assert.equal(existsSync(new URL("../index.ts", import.meta.url)), true);
 });
 
+test("README states the complete compatibility and behavior contract", () => {
+  const readme = readFileSync(readmePath, "utf8");
+  assert.match(
+    readme,
+    /pi-flag 0\.1\.x supports Pi `@earendil-works\/pi-coding-agent` and `@earendil-works\/pi-tui` versions `>=0\.84\.3 <0\.85\.0`; tested against 0\.84\.3\./,
+  );
+  for (const heading of [
+    "## Installation",
+    "## Using `/flag`",
+    "## Eligible content",
+    "## Session, branch, and persistence semantics",
+    "## Model projection and compaction",
+    "## Finite context and refusal",
+    "## Accessibility and terminal behavior",
+    "## Unsupported behavior",
+    "## Removal",
+    "## Development",
+  ]) {
+    assert.ok(readme.includes(heading), `missing README section ${heading}`);
+  }
+  assert.match(readme, /resends flagged text in full/);
+  assert.match(readme, /does not erase session history or prior provider requests/);
+  assert.match(readme, /Nothing was truncated|nothing was truncated/);
+  assert.match(readme, /zero build step|no build step/);
+  assert.match(readme, /zero runtime dependencies|no runtime dependencies/);
+  assert.match(readme, /npm install --ignore-scripts/);
+  assert.doesNotMatch(readme, /implementation is in progress/i);
+});
+
 test("lockfile records exact direct metadata and registry integrity", () => {
   assert.equal(existsSync(lockfilePath), true, "run npm install --ignore-scripts first");
   const lockfile = readJson(lockfilePath);
@@ -129,15 +159,14 @@ test("dry-run tarball contains only the approved package surface", () => {
     assert.equal(typeof path, "string");
     return String(path);
   });
-  for (const required of ["README.md", "index.ts", "package.json"] as const) {
-    assert.equal(paths.includes(required), true, `${required} must be packed`);
-  }
-  for (const path of paths) {
-    assert.ok(
-      path === "README.md" || path === "index.ts" || path === "package.json" || /^src\/[^/]+\.ts$/.test(path),
-      `${path} is outside the approved package surface`,
-    );
-  }
+  assert.deepEqual(paths.sort(), [
+    "README.md",
+    "index.ts",
+    "package.json",
+    "src/focus.ts",
+    "src/selector.ts",
+    "src/state.ts",
+  ]);
   for (const forbidden of ["PLAN.org", "AGENTS.md", "package-lock.json", "test/package.test.ts"] as const) {
     assert.equal(paths.includes(forbidden), false);
   }

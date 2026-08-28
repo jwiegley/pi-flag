@@ -279,15 +279,18 @@ Resume/fork/branch/rewind/corruption tests pass.
 ]
 #+end_src
 
-* TODO [#B] 6.1 Complete README and package contract    :implementation:
+* DONE [#B] 6.1 Complete README and package contract    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.13
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 17:03]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 17:03]
+:CLOSE_REASON: Complete README and exact package/published-surface contract verified.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -320,6 +323,20 @@ README/package tests and dry-run surface pass.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 28,
+    "issue_id": "flag-3ph.13",
+    "author": "pi",
+    "text": "Task 6.1 evidence:\n\n- Replaced provisional README with the complete user/package contract: current local install and future git/npm forms; `/flag` modes/controls; configurable actions; keyboard/non-color/narrow-terminal behavior; exact privacy acknowledgement/provider warning; eligibility for all StopReasons; branch/rewind/resume/fork semantics; ephemeral/not-yet-saved/durable states; corruption recovery; exact compaction/projection/cache behavior; finite-context formulas/refusal; trusted boundaries; unsupported direct custom turns; uninstall/inert marker behavior; and development commands.\n- README states the exact supported peer range/tested baseline, Node floor, source-TypeScript/no-build shape, zero runtime dependencies, private/UNLICENSED/no-release status, and no real provider tests.\n- Package test now asserts required README sections/claims and the exact six-file tarball surface (`README.md`, `index.ts`, `package.json`, and three `src/*.ts` files), excluding PLAN/OBR/tests/lock/cache/secrets.\n- Package metadata remains private, exact-pinned, lifecycle-free, and unchanged; no license, remote, or publication was added.\n\nChecks: package tests 4/4 pass; pack dry-run exact; typecheck pass; full `npm run check` passes all 72 discovered tests including support/fixture modules.\n",
+    "created_at": "2026-08-28T00:03:51Z"
   }
 ]
 #+end_src

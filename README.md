@@ -1,15 +1,147 @@
 # pi-flag
 
-`pi-flag` is a standalone Pi extension for session-scoped significance flags. The implementation is in progress and the package is private and unlicensed until release decisions are made.
+`pi-flag` is a standalone [Pi](https://pi.dev) extension for user-selected, session-scoped significance flags. `/flag` opens a filterable terminal selector; active flags are sent losslessly as persistent model focus on later user-input runs in the same session.
+
+The package is private and `UNLICENSED`. It has no remote or published npm release.
 
 ## Compatibility
 
-pi-flag 0.1.x supports `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` versions `>=0.84.3 <0.85.0`; tested against 0.84.3. Other Pi minor lines are unsupported until tested.
+pi-flag 0.1.x supports Pi `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` versions `>=0.84.3 <0.85.0`; tested against 0.84.3. Other Pi minor lines are unsupported until tested.
 
-## Security and privacy
+Node.js 22.19.0 or newer is required. The package ships erasable TypeScript directly and has no build step and no runtime dependencies. Pi loads `index.ts` through its TypeScript loader.
 
-Pi extensions execute with full user privileges. Review this package before installing it.
+## Installation
 
-The completed extension will resend user-selected session text to the active model provider on future runs in that session. Unflagging will stop future projection but cannot erase session history or prior provider requests.
+The currently supported installation is a reviewed local checkout:
 
-This package has zero runtime dependencies and no installation lifecycle scripts. Development dependencies are exact-pinned and installed with lifecycle scripts disabled.
+```bash
+pi install /absolute/path/to/pi-flag
+pi list
+```
+
+Once a remote or npm release is separately authorized, Pi also accepts `pi install git:<url>@<ref>` and `pi install npm:pi-flag@<version>`. No such release source is currently provided.
+
+## Using `/flag`
+
+Run `/flag` in Pi's interactive TUI. The command is unavailable in print, JSON, and RPC modes, and it refuses to open while an agent run or manual compaction is active.
+
+The selector lists eligible entries from the full session tree, newest first. Rows remain understandable without color:
+
+```text
+> [flagged] assistant a1b2c3d4 [off-branch] [length] Keep the calibration knob...
+  [ ] user       e5f6a7b8 [active] Refactor this without compatibility...
+```
+
+Type to fuzzy-filter full message text, role, entry ID, branch state, and flagged state. `Tab` cycles these modes:
+
+1. all entries;
+2. user prompts;
+3. assistant responses;
+4. flagged only.
+
+Controls use Pi's configured TUI actions rather than fixed key checks:
+
+| Action | Default | Purpose |
+|---|---|---|
+| `tui.select.up` / `tui.select.down` | arrows | Move the selected row |
+| `tui.select.pageUp` / `tui.select.pageDown` | Page Up / Page Down | Move by a page |
+| `tui.select.confirm` | Enter | Flag or unflag the row |
+| `tui.select.cancel` | Escape / Ctrl+C | Decline confirmation or close |
+| `tui.input.tab` | Tab | Cycle modes |
+| ordinary `Input` editing actions | configured defaults | Edit the query, including Unicode and paste |
+
+A toggle remains selected while it completes. Duplicate confirms are ignored. Errors stay inside the selector. Active dangling records appear as `[!]` rows and can be unflagged even when ordinary prompts are blocked.
+
+### First flag and provider changes
+
+Before the first activation in a session, the selector requires this acknowledgement:
+
+> pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.
+
+Declining performs no toggle. After acknowledgement, several entries can be managed without closing the selector.
+
+When active flags cross to a different model provider, pi-flag emits a content-free warning containing only the flag count, estimated token cost, and new provider. Same-provider model changes and sessions without flags do not warn.
+
+## Eligible content
+
+Version 1 flags whole persisted messages, never substrings:
+
+- user string or text-block prompts are eligible and preserve every text block exactly;
+- any user image makes that prompt ineligible because a text system prompt cannot reproduce it losslessly;
+- assistant `stop`, `length`, `toolUse`, `error`, and `aborted` results are eligible only when they contain nonempty visible text;
+- assistant `pending` and `deferred` results are ineligible;
+- empty separator text blocks are preserved around visible assistant text;
+- thinking, tool calls, tool results, provider `errorMessage`, bash output, custom messages, summaries, labels, model changes, and other metadata are excluded.
+
+Whitespace, newlines, Unicode, block boundaries, and visible partial text are not normalized. `length`, `toolUse`, `error`, and `aborted` provenance remains visible in the selector and projection.
+
+## Session, branch, and persistence semantics
+
+Flag operations append validated `pi-flag/marker` custom records containing the owning session ID, target entry ID, and active state. Flagged text is not copied into the journal; original message entries remain authoritative.
+
+- Flags are global within one session ID, including abandoned branches and rewinds.
+- An off-branch source is still projected and is labeled `[off-branch]`.
+- Rewinding before a marker does not undo it; use `/flag` to unflag.
+- Reopening or importing a file with the same session header ID restores flags.
+- `/new`, `/fork`, `/clone`, and CLI `--fork` create a new ID. Copied old-ID marker records are inert.
+- `--no-session` works only for the process lifetime and is labeled `ephemeral`.
+- A persisted session before its first assistant flush is labeled `not-yet-saved`; it becomes `durable` after the session file exists.
+
+Malformed marker records produce diagnostics and no invented state. A valid active record whose source is missing or no longer eligible blocks ordinary input without silently omitting the flag; `/flag` remains available to append its inactive tombstone.
+
+## Model projection and compaction
+
+Active observations are rebuilt from original full-log entries in activation order and serialized as fresh JSON-domain objects. One deterministic block is appended to the chained system prompt. Assistant text is explicitly quoted as observation data, not promoted to an instruction. New direct instructions may revise old flags, and the model is asked to report conflicts.
+
+The block is byte-stable while flag content/order is unchanged. A SHA-256 sentinel lets the final context guard require exactly one canonical block. Cooperative prompt middleware may add text before or after it; removal, alteration, or duplication aborts visibly. Mutation after the context hook and providers that disregard an already-aborted signal remain trusted extension/provider boundaries.
+
+Ordinary conversation history can be compacted. Original entries and marker records remain in the full session log, so repeated manual/automatic compaction and tool/retry continuations receive the same complete block. pi-flag never summarizes, trims, samples, partially injects, or automatically unflags selected text.
+
+Stable base-prompt-first ordering preserves the largest provider cache prefix. Actual cache hits remain provider-specific.
+
+## Finite context and refusal
+
+Finite model windows make unbounded lossless flags impossible. pi-flag refuses instead of degrading:
+
+```text
+focus limit = min(32,768 tokens, floor(context window / 4))
+response reserve = max(4,096, min(16,384, model.maxTokens))
+```
+
+Before a run, focus-only admission checks the current model without reading Pi's previous effective system prompt. Immediately before conversion, the context guard verifies the final chained prompt contains one exact block and checks the mandatory system prompt, expanded text/images, and response reserve. A failure says that nothing was truncated and directs the user to `/flag` or a larger model.
+
+Changing to a smaller model never changes flag state. If the set no longer fits, ordinary input is blocked and `/flag` remains the recovery path.
+
+## Accessibility and terminal behavior
+
+The selector is keyboard-only, retains an ASCII `>` focus cursor, and uses textual state labels rather than color alone. It routes editing, Unicode, grapheme deletion, bracketed paste, legacy terminal keys, Kitty CSI-u keys, navigation, confirmation, and cancellation through Pi/TUI facilities. Narrow and short terminals drop detail first while retaining query, list state, and configured-key help.
+
+This is a terminal component. Version 1 makes no operating-system screen-reader API claim beyond the plain text exposed by the host terminal. Platform/terminal behavior must be verified before making a portability claim.
+
+## Unsupported behavior
+
+- No live transcript marker, shortcut, widget, label integration, or built-in `/tree` modification is installed.
+- Direct `sendCustomMessage({ triggerTurn: true })` turns bypass user-input projection and are visibly aborted while flags are active. Cooperating extensions must use `sendUserMessage`.
+- Provider-payload mutation after Pi's context hook is outside pi-flag's integrity boundary.
+
+## Removal
+
+Remove the same source recorded by `pi list`, for example:
+
+```bash
+pi remove /absolute/path/to/pi-flag
+```
+
+Removal stops the extension from loading. Existing `pi-flag/marker` custom entries remain inert in session JSONL; uninstalling does not rewrite or erase session history or prior provider requests.
+
+## Development
+
+```bash
+npm install --ignore-scripts
+npm run typecheck
+npm test
+npm run check
+npm pack --dry-run --json
+```
+
+Development dependencies are exact-pinned. Installation lifecycle scripts are disabled and the package defines none. Tests use Pi's native faux provider, isolated session/package roots, and no real credentials or paid provider calls.
