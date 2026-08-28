@@ -184,6 +184,12 @@ test("accessibility: width and narrow-terminal fallbacks stay bounded", () => {
     assert.ok(lines.length <= height);
     for (const line of lines) assert.ok(visibleWidth(line) <= width, `${width} columns: ${line}`);
   }
+  terminal.rows = 5;
+  const compact = selector.render(20).map(stripTerminalSequences);
+  assert.equal(compact.length, 3);
+  assert.match(compact[0] ?? "", /Filter/);
+  assert.match(compact[1] ?? "", /^> /);
+  assert.match(compact[2] ?? "", /move/);
   assert.deepEqual(selector.render(0), []);
 });
 
@@ -302,7 +308,7 @@ test("shows a bounded no-match state and still honors cancel", () => {
   assert.equal(selector.getSelectedEntryId(), undefined);
   terminal.rows = 5;
   const lines = selector.render(20).map(stripTerminalSequences);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 3);
   assert.ok(lines.some((line) => line.includes("No matching")));
   selector.handleInput("\x1b");
   assert.equal(closes, 1);

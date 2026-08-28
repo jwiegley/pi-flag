@@ -166,7 +166,8 @@ export class FlagSelector implements Component, Focusable {
   render(width: number): string[] {
     if (width <= 0) return [];
     if (this.privacyEntryId) return this.renderPrivacy(width);
-    const maxLines = Math.max(1, this.tui.terminal.rows);
+    const maxLines = Math.max(1, this.tui.terminal.rows - 2);
+    if (maxLines <= 3) return this.renderCompact(width, maxLines);
     const includeSummary = maxLines >= 4;
     const includeHelp = maxLines >= 5;
     const selected = this.filteredRows[this.selectedIndex];
@@ -179,9 +180,7 @@ export class FlagSelector implements Component, Focusable {
     lines.push(this.fit(this.theme.bold(`pi-flag — ${this.mode}`), width));
     if (lines.length >= maxLines) return lines;
 
-    const queryWidth = Math.max(1, width - 7);
-    const queryLine = this.input.render(queryWidth)[0] ?? "";
-    lines.push(this.fit(`${this.theme.fg("accent", "Filter")} ${queryLine}`, width));
+    lines.push(this.renderQuery(width));
     if (lines.length >= maxLines) return lines;
 
     if (includeSummary) {
@@ -216,6 +215,23 @@ export class FlagSelector implements Component, Focusable {
 
     if (includeHelp && lines.length < maxLines) lines.push(this.renderHelp(width));
     return lines.slice(0, maxLines);
+  }
+
+  private renderCompact(width: number, maxLines: number): string[] {
+    const selected = this.filteredRows[this.selectedIndex];
+    const rowLine = selected
+      ? this.renderRow(selected, true, width)
+      : this.fit(this.theme.fg("muted", "> No matching entries"), width);
+    if (maxLines === 1) return [rowLine];
+    const lines = [this.renderQuery(width), rowLine];
+    if (maxLines >= 3) lines.push(this.renderHelp(width));
+    return lines;
+  }
+
+  private renderQuery(width: number): string {
+    const queryWidth = Math.max(1, width - 7);
+    const queryLine = this.input.render(queryWidth)[0] ?? "";
+    return this.fit(`${this.theme.fg("accent", "Filter")} ${queryLine}`, width);
   }
 
   private rebuildRows(): void {
@@ -317,7 +333,7 @@ export class FlagSelector implements Component, Focusable {
   }
 
   private renderPrivacy(width: number): string[] {
-    const maxLines = Math.max(1, this.tui.terminal.rows);
+    const maxLines = Math.max(1, this.tui.terminal.rows - 2);
     const notice =
       "pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.";
     const lines = [

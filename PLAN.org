@@ -341,15 +341,18 @@ README/package tests and dry-run surface pass.
 ]
 #+end_src
 
-* TODO [#B] 6.2 Run local and packed-package Pi smoke    :implementation:
+* DONE [#B] 6.2 Run local and packed-package Pi smoke    :implementation:
 :PROPERTIES:
 :OBR_SCHEMA_VERSION: 17
 :ID:       flag-3ph.14
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:57]
-:MODIFIED: [2026-08-27 Thu 14:57]
+:MODIFIED: [2026-08-27 Thu 17:33]
+:ASSIGNEE: pi
 :CREATED_BY: pi
+:FINISHED: [2026-08-27 Thu 17:33]
+:CLOSE_REASON: Source/packed Pi installs, RPC command discovery, macOS/tmux accessibility smoke, compaction/resume, and explicit unverified platform matrix complete.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -382,6 +385,20 @@ Source/packed install and required manual matrices have evidence.
     "created_by": "pi",
     "metadata": "{}",
     "thread_id": ""
+  }
+]
+#+end_src
+
+** Comments
+
+#+begin_src json
+[
+  {
+    "id": 31,
+    "issue_id": "flag-3ph.14",
+    "author": "pi",
+    "text": "Task 6.2 evidence (Darwin 25.5.0 arm64, Pi 0.84.3, tmux 3.7c):\n\nInstall/package smoke:\n\n- `npm ci --ignore-scripts`: 221 packages, audit 0; `npm run check`: pass.\n- Isolated source agent root: actual `pi install /Users/johnw/src/pi-flag`, `pi list`, and no-session/no-tools/no-skills/no-prompts/no-themes/no-context RPC `get_commands` all pass. RPC returns extension command `flag` from source `index.ts`.\n- Current `npm pack --json` tarball installed from a safe temp working directory. Source and installed manifests compare byte-for-byte as JSON; clean temp `npm ls --depth=0` reports only `pi-flag@0.1.0`; runtime audit has 0 vulnerabilities.\n- Isolated packed agent root: actual `pi install <temp>/node_modules/pi-flag`, `pi list`, and restricted RPC `get_commands` pass; `flag` resolves from packed `index.ts`.\n- Smoke caught an unsafe `npm init --prefix` behavior that had initialized the source manifest. The injected fields were detected by `npm ls`/package tests, removed through an anchored edit, and the clean packed root was rebuilt with `cd <temp> && npm init`; source manifest/lock now match the committed contract.\n\nAvailable TUI/manual evidence (local faux provider only, no endpoint/auth/paid token):\n\n- Source and clean packed installs both start in tmux and open `/flag` over a persisted two-message session.\n- Custom action bindings (`ctrl+p/n`, `ctrl+b/f`, `ctrl+x`, `ctrl+g`, `ctrl+t`) are shown and work; displaced default Escape leaves the selector open; configured cancel closes it.\n- Bracketed paste `ユニ\\ncode` becomes `ユニcode`, filters the correct row, and preserves Unicode.\n- First activation shows the exact privacy notice; acceptance flags the user row. A second row toggles in the same selector. Plain capture shows two `[flagged]` labels and one ASCII `>` focus row.\n- `flagged` mode, `/tree` without pi-flag decoration, post-cancel editor input and submitted local-faux response all pass.\n- Source session exits/reopens with both flags. With isolated `keepRecentTokens: 1`, two actual `/compact` operations succeed; reopening `/flag` still shows both original entries flagged.\n- Live 20x5 smoke initially exposed footer clipping. OBR `flag-3ph.7` was reopened; selector now budgets two host footer rows. Source and packed captures at 20x5 show query + focused row + help. 40x10 shows title/query/summary/rows/detail/help.\n- Named `^accessibility:` subset: 5/5 pass.\n- Automated integration covers model downsizing recovery, manual-compaction guard/failure, off-branch/rewind, and branch/fork behavior that cannot be safely forced through this unattended TUI.\n\nTerminal matrix:\n\n| Host / protocol | Result | Evidence / limitation |\n|---|---|---|\n| macOS Darwin, tmux `tmux-256color` legacy path | PASS | Source + packed open, custom keys, Unicode bracketed paste, multi-toggle, cancel/no trap, 80x24/40x10/20x5, repeated compaction/resume. |\n| macOS Terminal.app native legacy | UNVERIFIED | Headless session cannot attach a native Terminal.app client; no native-Terminal portability claim. |\n| macOS Kitty-capable terminal (Ghostty/Kitty CSI-u) | UNVERIFIED manually | Automated selector tests cover CSI-u printable and functional control sequences; no attached Kitty-capable client, so no manual claim. |\n| Linux legacy/Kitty | UNVERIFIED | Host unavailable; blocks Linux portability/release claim. |\n| Windows Terminal + PowerShell | UNVERIFIED | Host unavailable; blocks Windows portability/release claim. |\n| WSL under Windows Terminal | UNVERIFIED | Host unavailable; blocks WSL portability/release claim. |\n| Multiplexer tmux on available macOS host | PASS | Plain and ANSI captures recorded for normal/narrow layouts; focus/cancel and resize verified. |\n\nArtifacts were recorded under `/tmp/pi-flag-smoke.AuGyUJ` during review (RPC JSONL, install/list output, source/packed normal and narrow captures, privacy, multi-toggle, tree, compaction, resume, accessibility output). They are removed after this OBR evidence is committed. No cross-platform or publication claim is made from unverified rows.\n",
+    "created_at": "2026-08-28T00:33:49Z"
   }
 ]
 #+end_src
@@ -748,11 +765,11 @@ Focus/final capacity boundary tests pass without stale-prompt reads.
 :LABELS:   ["implementation","pi-flag"]
 :ISSUE_TYPE: task
 :CREATED:  [2026-08-27 Thu 14:56]
-:MODIFIED: [2026-08-27 Thu 15:56]
+:MODIFIED: [2026-08-27 Thu 17:33]
 :ASSIGNEE: pi
 :CREATED_BY: pi
-:FINISHED: [2026-08-27 Thu 15:56]
-:CLOSE_REASON: Filterable bounded selector and named keyboard/non-color/Unicode accessibility coverage implemented.
+:FINISHED: [2026-08-27 Thu 17:33]
+:CLOSE_REASON: Live footer-aware 20x5 compact layout fixed and verified in source and packed Pi TUI.
 :SOURCE_REPO: pi-flag
 :SOURCE_REPO_PATH: /Users/johnw/src/pi-flag
 :ORIGINAL_SIZE: 0
@@ -808,6 +825,20 @@ Selector, accessibility, Unicode, terminal, and keybinding tests pass.
     "author": "pi",
     "text": "Task 3.1 evidence:\n\n- Added public-primitives-only `FlagSelector` with `Input`, supplied `KeybindingsManager`, fuzzy full-corpus filtering, all/user/assistant/flagged modes, newest-first source order, and stable entry-ID selection.\n- Rendering includes ASCII focus cursor, textual `[flagged]`/`[ ]`, `[active]`/`[off-branch]`, `[!]` diagnostic state, role/ID/StopReason, status counts, bounded detail, configured-key help, and 80x24/40x10/20x5/tiny fallbacks.\n- Navigation/page/confirm/cancel/tab use configurable action IDs only; all other text goes through `Input`.\n- Named accessibility tests cover plain-text focus/non-color state, Unicode/graphemes, bracketed multiline paste, legacy arrows, Kitty CSI-u printable and functional control sequences, custom bindings replacing defaults, no-match and cancel.\n- No direct stdin, raw-mode ownership, timers, listeners, `matchesKey`, or literal production key checks.\n\nChecks: focused selector tests 7/7 pass; typecheck pass; full `npm run check` 36/36 pass; pack surface valid.\n",
     "created_at": "2026-08-27T22:56:26Z"
+  },
+  {
+    "id": 29,
+    "issue_id": "flag-3ph.7",
+    "author": "pi",
+    "text": "Reopened: Live 20x5 Pi smoke showed footer clipping hid the query; compact layout must budget two host footer rows.",
+    "created_at": "2026-08-28T00:15:31Z"
+  },
+  {
+    "id": 30,
+    "issue_id": "flag-3ph.7",
+    "author": "pi",
+    "text": "Live smoke regression and fix:\n\n- Actual Pi TUI at 20x5 reserves two footer rows. The original component rendered five selector lines, so Pi clipped the first two and hid title/query.\n- Selector now budgets `terminal.rows - 2`. At three available rows it deliberately renders query, focused row, and configured-key help; at two rows query+row; at one row the focused row.\n- Privacy rendering uses the same host-footer budget.\n- Automated 80x24/40x10/20x5/tiny tests now assert the compact 20x5 output is exactly query, selected row, and help.\n- Reloaded source smoke capture at 20x5: `Filter >`, `> [flagged] assistant...`, `ctrl+p/ctrl+n move...`; packed safe install capture shows the same layout.\n- 40x10 retained title, query, summary, two rows, detail, and help.\n\nFocused selector tests 14/14 pass; typecheck and full check pass.\n",
+    "created_at": "2026-08-28T00:32:59Z"
   }
 ]
 #+end_src
