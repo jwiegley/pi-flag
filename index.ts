@@ -64,8 +64,11 @@ export default function piFlag(pi: ExtensionAPI): void {
   const restoreEntries = (ctx: ExtensionContext): SessionEntry[] => {
     const sessionManager = boundedSessionManager(ctx);
     const { entryCount } = sessionManager.getHistorySummary();
+    const afterOrdinal = entryCount > MAX_RESTORED_FLAG_RECORDS
+      ? entryCount - MAX_RESTORED_FLAG_RECORDS - 1
+      : undefined;
     const records = sessionManager.getEntriesPage({
-      afterOrdinal: Math.max(-1, entryCount - MAX_RESTORED_FLAG_RECORDS - 1),
+      ...(afterOrdinal === undefined ? {} : { afterOrdinal }),
       customType: FLAG_RECORD_TYPE,
       limit: MAX_RESTORED_FLAG_RECORDS,
     }).entries;
