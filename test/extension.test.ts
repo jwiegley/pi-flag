@@ -35,6 +35,41 @@ import { createTestHost, type TestHost } from "./support/host.ts";
 
 type CustomSessionEntry = Extract<SessionEntry, { type: "custom" }>;
 
+type RecentOptions = { customType?: string; limit?: number };
+type EntryPageOptions = RecentOptions & { afterOrdinal?: number };
+type BoundedTestSessionManager = {
+  getEntriesPage(options: EntryPageOptions): { entries: SessionEntry[] };
+  getHistorySummary(): { entryCount: number };
+  getRecentActiveEntries(options: RecentOptions): SessionEntry[];
+};
+
+function getRecentActiveEntries(manager: SessionManager, { customType, limit = 256 }: RecentOptions): SessionEntry[] {
+  return manager
+    .getBranch()
+    .filter((entry) => customType === undefined || (entry.type === "custom" && entry.customType === customType))
+    .slice(-limit);
+}
+
+const boundedTestSessionManager = SessionManager.prototype as unknown as BoundedTestSessionManager;
+boundedTestSessionManager.getRecentActiveEntries = function (this: SessionManager, options: RecentOptions): SessionEntry[] {
+  return getRecentActiveEntries(this, options);
+};
+boundedTestSessionManager.getHistorySummary = function (this: SessionManager): { entryCount: number } {
+  return { entryCount: this.getEntries().length };
+};
+boundedTestSessionManager.getEntriesPage = function (
+  this: SessionManager,
+  { afterOrdinal = -1, customType, limit = 256 }: EntryPageOptions,
+): { entries: SessionEntry[] } {
+  return {
+    entries: this
+      .getEntries()
+      .slice(afterOrdinal + 1)
+      .filter((entry) => customType === undefined || (entry.type === "custom" && entry.customType === customType))
+      .slice(0, limit),
+  };
+};
+
 type TestComponent = Component & { dispose?(): void };
 type CustomFactory = (
   tui: TUI,
@@ -106,9 +141,10 @@ function createUiHarness(onOpen?: (component: TestComponent) => Promise<void> | 
 
 function sessionView(host: TestHost, sessionFile: string | undefined): ExtensionCommandContext["sessionManager"] {
   return {
-    getEntries: () => host.sessionManager.getEntries(),
+    getEntriesPage: (options: EntryPageOptions) => boundedTestSessionManager.getEntriesPage.call(host.sessionManager, options),
+    getHistorySummary: () => boundedTestSessionManager.getHistorySummary.call(host.sessionManager),
+    getRecentActiveEntries: (options: RecentOptions) => getRecentActiveEntries(host.sessionManager, options),
     getSessionId: () => host.sessionManager.getSessionId(),
-    getBranch: () => host.sessionManager.getBranch(),
     getSessionFile: () => sessionFile,
     getEntry: (entryId: string) => host.sessionManager.getEntry(entryId),
   } as unknown as ExtensionCommandContext["sessionManager"];

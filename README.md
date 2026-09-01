@@ -6,7 +6,7 @@ The package is private and `UNLICENSED`. It has no remote or published npm relea
 
 ## Compatibility
 
-pi-flag 0.1.x supports Pi `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` versions `>=0.84.3 <0.85.0`; tested against 0.84.3. Other Pi minor lines are unsupported until tested.
+pi-flag 0.1.x supports Pi `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` versions `>=0.84.4 <0.85.0`; tested against 0.84.4. Other Pi minor lines are unsupported until tested.
 
 Node.js 22.19.0 or newer is required. The package ships erasable TypeScript directly and has no build step and no runtime dependencies. Pi loads `index.ts` through its TypeScript loader.
 
@@ -25,7 +25,7 @@ Once a remote or npm release is separately authorized, Pi also accepts `pi insta
 
 Run `/flag` in Pi's interactive TUI. The command is unavailable in print, JSON, and RPC modes, and it refuses to open while an agent run or manual compaction is active.
 
-The selector lists eligible entries from the full session tree, newest first. Rows remain understandable without color:
+The selector lists the 256 most recent active-branch entries plus sources referenced by its 256 most recent flag records, newest first. Rows remain understandable without color:
 
 ```text
 > [flagged] assistant a1b2c3d4 [off-branch] [length] Keep the calibration knob...

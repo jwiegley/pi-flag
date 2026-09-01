@@ -24,14 +24,14 @@ function requireRecord(value: unknown): Record<string, unknown> {
 }
 
 const expectedPeers = {
-  "@earendil-works/pi-coding-agent": ">=0.84.3 <0.85.0",
-  "@earendil-works/pi-tui": ">=0.84.3 <0.85.0",
+  "@earendil-works/pi-coding-agent": ">=0.84.4 <0.85.0",
+  "@earendil-works/pi-tui": ">=0.84.4 <0.85.0",
 };
 
 const expectedDevDependencies = {
-  "@earendil-works/pi-ai": "0.84.3",
-  "@earendil-works/pi-coding-agent": "0.84.3",
-  "@earendil-works/pi-tui": "0.84.3",
+  "@earendil-works/pi-ai": "0.84.4",
+  "@earendil-works/pi-coding-agent": "0.84.4",
+  "@earendil-works/pi-tui": "0.84.4",
   "@types/node": "22.19.19",
   typescript: "5.9.3",
 };
@@ -39,14 +39,14 @@ const expectedDevDependencies = {
 const lifecycleScripts = ["build", "prepare", "prepack", "preinstall", "install", "postinstall"];
 
 // The signed coding-agent tarball includes a shrinkwrap whose nested Pi entries omit integrity.
-// Task 0.1 separately verifies these exact 0.84.3 registry artifacts and their SLSA provenance.
+// Task 0.1 separately verifies these exact 0.84.4 registry artifacts and their SLSA provenance.
 const reviewedShrinkwrapUrls = new Set([
-  "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.84.3.tgz",
-  "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.84.3.tgz",
-  "https://registry.npmjs.org/@earendil-works/pi-client/-/pi-client-0.84.3.tgz",
-  "https://registry.npmjs.org/@earendil-works/pi-protocol/-/pi-protocol-0.84.3.tgz",
-  "https://registry.npmjs.org/@earendil-works/pi-telemetry/-/pi-telemetry-0.84.3.tgz",
-  "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.84.3.tgz",
+  "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.84.4.tgz",
+  "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.84.4.tgz",
+  "https://registry.npmjs.org/@earendil-works/pi-client/-/pi-client-0.84.4.tgz",
+  "https://registry.npmjs.org/@earendil-works/pi-protocol/-/pi-protocol-0.84.4.tgz",
+  "https://registry.npmjs.org/@earendil-works/pi-telemetry/-/pi-telemetry-0.84.4.tgz",
+  "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.84.4.tgz",
 ]);
 
 test("package metadata matches the approved contract", () => {
@@ -81,7 +81,7 @@ test("README states the complete compatibility and behavior contract", () => {
   const readme = readFileSync(readmePath, "utf8");
   assert.match(
     readme,
-    /pi-flag 0\.1\.x supports Pi `@earendil-works\/pi-coding-agent` and `@earendil-works\/pi-tui` versions `>=0\.84\.3 <0\.85\.0`; tested against 0\.84\.3\./,
+    /pi-flag 0\.1\.x supports Pi `@earendil-works\/pi-coding-agent` and `@earendil-works\/pi-tui` versions `>=0\.84\.4 <0\.85\.0`; tested against 0\.84\.4\./,
   );
   for (const heading of [
     "## Installation",

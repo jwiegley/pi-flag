@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
   appendFocus,
   assessFinalRequest,
@@ -36,6 +36,19 @@ type RuntimeState = {
   };
 };
 
+const MAX_RESTORED_FLAG_RECORDS = 256;
+const MAX_SELECTOR_ENTRIES = 256;
+
+type BoundedSessionManager = Pick<ExtensionContext["sessionManager"], "getEntry"> & {
+  getEntriesPage(options: { afterOrdinal?: number; customType?: string; limit?: number }): { entries: SessionEntry[] };
+  getHistorySummary(): { entryCount: number };
+  getRecentActiveEntries(options: { limit?: number }): SessionEntry[];
+};
+
+function boundedSessionManager(ctx: ExtensionContext): BoundedSessionManager {
+  return ctx.sessionManager as unknown as BoundedSessionManager;
+}
+
 function emptyReplay(): FlagReplay {
   return { active: new Map(), warnings: [], blockers: [] };
 }
@@ -48,8 +61,27 @@ export default function piFlag(pi: ExtensionAPI): void {
     hasCurrentSessionRecords: false,
   };
 
+  const restoreEntries = (ctx: ExtensionContext): SessionEntry[] => {
+    const sessionManager = boundedSessionManager(ctx);
+    const { entryCount } = sessionManager.getHistorySummary();
+    const records = sessionManager.getEntriesPage({
+      afterOrdinal: Math.max(-1, entryCount - MAX_RESTORED_FLAG_RECORDS - 1),
+      customType: FLAG_RECORD_TYPE,
+      limit: MAX_RESTORED_FLAG_RECORDS,
+    }).entries;
+    const sources = new Map<string, SessionEntry>();
+    for (const recordEntry of records) {
+      if (recordEntry.type !== "custom") continue;
+      const record = parseFlagRecord(recordEntry.data);
+      if (!record) continue;
+      const source = sessionManager.getEntry(record.targetEntryId);
+      if (source) sources.set(source.id, source);
+    }
+    return [...sources.values(), ...records];
+  };
+
   const refreshState = (ctx: ExtensionContext): void => {
-    const entries = ctx.sessionManager.getEntries();
+    const entries = restoreEntries(ctx);
     const sessionId = ctx.sessionManager.getSessionId();
     state.sessionId = sessionId;
     state.replay = replayFlags(entries, sessionId);
@@ -62,8 +94,10 @@ export default function piFlag(pi: ExtensionAPI): void {
   };
 
   const buildSnapshot = (ctx: ExtensionContext): FlagSelectorSnapshot => {
-    const entries = ctx.sessionManager.getEntries();
-    const branchIds = new Set(ctx.sessionManager.getBranch().map(({ id }) => id));
+    const recentEntries = boundedSessionManager(ctx).getRecentActiveEntries({ limit: MAX_SELECTOR_ENTRIES });
+    const restoredEntries = restoreEntries(ctx);
+    const entries = [...recentEntries, ...restoredEntries];
+    const branchIds = new Set(recentEntries.map(({ id }) => id));
     const seen = new Set<string>();
     const rows: FlagSelectorRow[] = [];
 
