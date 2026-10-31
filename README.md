@@ -122,7 +122,7 @@ This is a terminal component. Version 1 makes no operating-system screen-reader 
 ## Unsupported behavior
 
 - No live transcript marker, shortcut, widget, label integration, or built-in `/tree` modification is installed.
-- Direct `sendCustomMessage({ triggerTurn: true })` turns bypass user-input projection and are visibly aborted while flags are active. Cooperating extensions must use `sendUserMessage`.
+- Direct `sendCustomMessage({ triggerTurn: true })` turns, such as goal continuations and subagent or MCP results, proceed with the focus appended while flags are active. pi-flag projects them from a `before_agent_start` event with `messageType: "custom"` and no prompt, or an empty one, and counts no input tokens for the custom message. No input event precedes them, so the dangling-record and focus-limit checks on ordinary input do not run for them; the final context guard still does. Pi 0.84 starts such turns without that event and so gives pi-flag no projection hook; there they are still visibly aborted, and cooperating extensions must use `sendUserMessage`.
 - Provider-payload mutation after Pi's context hook is outside pi-flag's integrity boundary.
 
 ## Removal

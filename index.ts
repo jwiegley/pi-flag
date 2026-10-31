@@ -7,6 +7,7 @@ import {
   estimateInputTokens,
   serializeFocus,
   verifyFocusProjection,
+  type InputImage,
   type SerializedFocus,
 } from "./src/focus.ts";
 import {
@@ -51,6 +52,16 @@ function boundedSessionManager(ctx: ExtensionContext): BoundedSessionManager {
 
 function emptyReplay(): FlagReplay {
   return { active: new Map(), warnings: [], blockers: [] };
+}
+
+// Since Pi 1.2.0, a run that sendCustomMessage({ triggerTurn: true }) starts also emits
+// before_agent_start, with messageType "custom" and no prompt (some builds send ""). The
+// Pi 0.84 types predate both. Such a run has no user input to estimate.
+type AgentStartInput = { messageType?: string; prompt?: string; images?: readonly InputImage[] };
+
+function userInputTokens(start: AgentStartInput): number {
+  if (start.messageType === "custom" || typeof start.prompt !== "string") return 0;
+  return estimateInputTokens(start.prompt, start.images);
 }
 
 export default function piFlag(pi: ExtensionAPI): void {
@@ -267,7 +278,7 @@ export default function piFlag(pi: ExtensionAPI): void {
     const focus = state.serialized;
     state.run = {
       focus,
-      expandedInputTokens: estimateInputTokens(event.prompt, event.images),
+      expandedInputTokens: userInputTokens(event),
       blocked: false,
     };
     return { systemPrompt: appendFocus(event.systemPrompt, focus) };

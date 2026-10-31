@@ -28,7 +28,7 @@ import {
   TUI_KEYBINDINGS,
 } from "@earendil-works/pi-tui";
 
-import { serializeFocus } from "../src/focus.ts";
+import { estimateInputTokens, estimateTextTokens, responseReserve, serializeFocus } from "../src/focus.ts";
 import { FlagSelector } from "../src/selector.ts";
 import { FLAG_RECORD_TYPE, parseFlagRecord, replayFlags } from "../src/state.ts";
 import { createTestHost, type TestHost } from "./support/host.ts";
@@ -186,6 +186,37 @@ async function emitHandler(
   const handlers = packageExtension(host).handlers.get(eventName);
   assert.ok(handlers && handlers.length > 0, `missing ${eventName} handler`);
   for (const handler of handlers) await handler(event as never, ctx);
+}
+
+async function beforeAgentStart(host: TestHost, ui: UiHarness, start: Record<string, unknown>): Promise<string> {
+  const [handler] = packageExtension(host).handlers.get("before_agent_start") ?? [];
+  assert.ok(handler, "missing before_agent_start handler");
+  const event = { type: "before_agent_start", systemPrompt: host.session.systemPrompt, ...start };
+  const result = (await handler(event, commandContext(host, ui.ui))) as { systemPrompt?: string } | undefined;
+  const systemPrompt = result?.systemPrompt;
+  assert.ok(systemPrompt !== undefined, "pi-flag returned no system prompt");
+  return systemPrompt;
+}
+
+async function contextGuardAborts(
+  host: TestHost,
+  ui: UiHarness,
+  systemPrompt: string,
+  contextWindow: number,
+): Promise<boolean> {
+  const model = host.session.model;
+  assert.ok(model);
+  let aborted = false;
+  const ctx = {
+    ...commandContext(host, ui.ui),
+    model: { ...model, contextWindow },
+    getSystemPrompt: () => systemPrompt,
+    abort: () => {
+      aborted = true;
+    },
+  } as unknown as ExtensionCommandContext;
+  await emitHandler(host, "context", { type: "context", messages: [] }, ctx);
+  return aborted;
 }
 
 function nextTurn(): Promise<void> {
@@ -810,6 +841,62 @@ test("direct custom-trigger turns abort visibly when active flags lack a run cac
     assert.equal(host.faux.state.callCount, 0);
     assert.equal(host.faux.getPendingResponseCount(), 1);
     assert.ok(ui.notifications.some(({ message }) => message.includes("unsupported direct-trigger")));
+  } finally {
+    host.cleanup();
+  }
+});
+
+// Since Pi 1.2.0, a sendCustomMessage({ triggerTurn: true }) run emits before_agent_start with
+// messageType "custom" and no prompt; some builds send prompt "". Pi 0.84 emits no event for
+// such runs, so these tests hand pi-flag's own handlers the newer event.
+async function assertCustomRunProceedsWithFocus(promptField: { prompt?: "" }): Promise<void> {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "custom run focus");
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const model = host.session.model;
+    assert.ok(model);
+    const systemPrompt = await beforeAgentStart(host, ui, {
+      messageType: "custom",
+      message: { role: "custom", customType: "test/direct", content: "trigger", display: false, timestamp: 0 },
+      ...promptField,
+    });
+    assert.equal(systemPrompt, `${host.session.systemPrompt}\n\n${focusForHost(host).block}`);
+    const exactFit = estimateTextTokens(systemPrompt) + responseReserve(model);
+    assert.equal(await contextGuardAborts(host, ui, systemPrompt, exactFit), false);
+    assert.equal(ui.notifications.length, 0);
+    assert.equal(await contextGuardAborts(host, ui, systemPrompt, exactFit - 1), true);
+    assert.ok(ui.notifications.some(({ message, type }) => type === "error" && message.includes("Nothing was truncated")));
+  } finally {
+    host.cleanup();
+  }
+}
+
+test("custom-message runs without a prompt get the focus and no input estimate", async () => {
+  await assertCustomRunProceedsWithFocus({});
+});
+
+test("custom-message runs with an empty prompt get the focus and no input estimate", async () => {
+  await assertCustomRunProceedsWithFocus({ prompt: "" });
+});
+
+test("user-message runs still count their prompt and images in the final guard", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "user run focus");
+  const images = [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }] as const;
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const model = host.session.model;
+    assert.ok(model);
+    const inputAndReserve = estimateInputTokens("current input", images) + responseReserve(model);
+    for (const messageType of [{}, { messageType: "user" }]) {
+      const systemPrompt = await beforeAgentStart(host, ui, { ...messageType, prompt: "current input", images });
+      const exactFit = estimateTextTokens(systemPrompt) + inputAndReserve;
+      assert.equal(await contextGuardAborts(host, ui, systemPrompt, exactFit), false);
+      assert.equal(await contextGuardAborts(host, ui, systemPrompt, exactFit - 1), true);
+    }
   } finally {
     host.cleanup();
   }
