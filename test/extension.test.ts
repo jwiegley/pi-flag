@@ -902,6 +902,108 @@ test("user-message runs still count their prompt and images in the final guard",
   }
 });
 
+// No input event admits a custom-message run, so before_agent_start must refuse one itself. That
+// hook cannot veto a run; pi-flag aborts it.
+async function customRunStart(
+  host: TestHost,
+  ui: UiHarness,
+  promptField: { prompt?: "" },
+  model = host.session.model,
+): Promise<{ systemPrompt: string | undefined; aborts: number }> {
+  const [handler] = packageExtension(host).handlers.get("before_agent_start") ?? [];
+  assert.ok(handler, "missing before_agent_start handler");
+  let aborts = 0;
+  const ctx = {
+    ...commandContext(host, ui.ui),
+    model,
+    abort: () => {
+      aborts++;
+    },
+  } as unknown as ExtensionCommandContext;
+  const event = {
+    type: "before_agent_start",
+    systemPrompt: host.session.systemPrompt,
+    messageType: "custom",
+    message: { role: "custom", customType: "test/direct", content: "trigger", display: false, timestamp: 0 },
+    ...promptField,
+  };
+  const result = (await handler(event, ctx)) as { systemPrompt?: string } | undefined;
+  return { systemPrompt: result?.systemPrompt, aborts };
+}
+
+for (const promptField of [{}, { prompt: "" as const }]) {
+  const shape = "prompt" in promptField ? "an empty prompt" : "no prompt";
+
+  for (const withValidFlag of [true, false]) {
+    test(`custom-message runs with ${shape} and ${withValidFlag ? "a valid and " : ""}a dangling flag project nothing and abort`, async () => {
+      const host = await createTestHost();
+      const ui = createUiHarness();
+      if (withValidFlag) appendFlaggedUser(host, "valid focus");
+      host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+        version: 1,
+        sessionId: host.sessionManager.getSessionId(),
+        targetEntryId: "missing-entry",
+        active: true,
+      });
+      try {
+        await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+        const start = await customRunStart(host, ui, promptField);
+        assert.equal(start.systemPrompt, undefined);
+        assert.equal(start.aborts, 1);
+        assert.deepEqual(ui.notifications, [
+          {
+            message:
+              "pi-flag refused an extension-started run. Active flag target missing-entry is missing. Nothing was omitted. Open /flag to unflag it.",
+            type: "error",
+          },
+        ]);
+        assert.equal(await contextGuardAborts(host, ui, host.session.systemPrompt, 128000), true);
+        assert.equal(ui.notifications.length, 1);
+      } finally {
+        host.cleanup();
+      }
+    });
+  }
+
+  test(`custom-message runs with ${shape} obey the focus limit`, async () => {
+    const host = await createTestHost();
+    const ui = createUiHarness();
+    appendFlaggedUser(host, "x".repeat(6000));
+    try {
+      await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+      const model = host.session.model;
+      assert.ok(model);
+      const start = await customRunStart(host, ui, promptField, { ...model, contextWindow: 4000 });
+      assert.equal(start.systemPrompt, undefined);
+      assert.equal(start.aborts, 1);
+      assert.equal(ui.notifications.length, 1);
+      assert.match(
+        ui.notifications[0]?.message ?? "",
+        /Focus requires ~\d+ tokens; this model permits 1000\. Nothing was truncated/,
+      );
+      assert.equal(await contextGuardAborts(host, ui, host.session.systemPrompt, 4000), true);
+      assert.equal(ui.notifications.length, 1);
+    } finally {
+      host.cleanup();
+    }
+  });
+}
+
+test("custom-message runs refresh flag state before projecting it", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    appendFlaggedUser(host, "flagged after the last refresh");
+    const start = await customRunStart(host, ui, {});
+    assert.equal(start.aborts, 0);
+    assert.equal(start.systemPrompt, `${host.session.systemPrompt}\n\n${focusForHost(host).block}`);
+    assert.deepEqual(ui.notifications, []);
+  } finally {
+    host.cleanup();
+  }
+});
+
 test("provider-change warning is content-free and only fires across providers with active flags", async () => {
   const host = await createTestHost([], {
     faux: {
@@ -1103,6 +1205,173 @@ test("keeps one identical focus block through a tool-call continuation", async (
     host.cleanup();
   }
 });
+
+// Holds the first faux request open so a test can act while the run streams.
+function createGate(): { started: Promise<void>; hold(): Promise<void>; release(): void } {
+  let markStarted = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    started,
+    async hold() {
+      markStarted();
+      await released;
+    },
+    release: () => release(),
+  };
+}
+
+function readToolCall(path: string) {
+  return fauxAssistantMessage([fauxText("checking"), fauxToolCall("read", { path }, { id: "read-1" })], {
+    stopReason: "toolUse",
+  });
+}
+
+// In the TUI, Enter while a run streams submits steering input, and Alt+Enter by default a follow-up. Pi
+// emits the input event for them but no before_agent_start, and delivers them inside the current run.
+for (const streamingBehavior of ["steer", "followUp", undefined] as const) {
+  test(`mid-run input (${streamingBehavior ?? "no streamingBehavior"}) keeps the flagged run's one focus block`, async () => {
+    const host = await createTestHost([], { tools: ["read"] });
+    const ui = createUiHarness();
+    appendFlaggedUser(host, "mid-run focus");
+    const file = join(host.root, "tool-input.txt");
+    writeFileSync(file, "tool output");
+    const gate = createGate();
+    // The context holds tool functions, which structuredClone rejects.
+    const requests: Array<{ systemPrompt: string; messages: string }> = [];
+    const record = (context: Context) => {
+      requests.push({ systemPrompt: context.systemPrompt ?? "", messages: JSON.stringify(context.messages) });
+    };
+    host.faux.setResponses([
+      async (context) => {
+        record(context);
+        await gate.hold();
+        return readToolCall(file);
+      },
+      (context) => {
+        record(context);
+        return fauxAssistantMessage("after tool");
+      },
+      (context) => {
+        record(context);
+        return fauxAssistantMessage("after follow-up");
+      },
+    ]);
+    try {
+      await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+      const run = host.session.prompt("start");
+      await gate.started;
+      if (streamingBehavior === undefined) {
+        await assert.rejects(host.session.prompt("mid-run input"), /already processing/);
+      } else {
+        await host.session.prompt("mid-run input", { streamingBehavior });
+      }
+      gate.release();
+      await run;
+      await host.session.waitForIdle();
+      const focus = focusForHost(host);
+      assert.equal(host.faux.state.callCount, streamingBehavior === "followUp" ? 3 : 2);
+      assert.equal(requests.length, host.faux.state.callCount);
+      for (const request of requests) {
+        assert.equal(request.systemPrompt, requests[0]?.systemPrompt);
+        assert.equal(countOccurrences(request.systemPrompt, focus.block), 1);
+      }
+      assert.equal(requests.at(-1)?.messages.includes("mid-run input"), streamingBehavior !== undefined);
+      assert.deepEqual(ui.notifications, []);
+    } finally {
+      host.cleanup();
+    }
+  });
+}
+
+// The final guard counts queued input too: a follow-up too large for the model stops the run before
+// it is sent, as the same text would be refused as a new prompt.
+test("a queued follow-up too large for the model is refused before it is sent", async () => {
+  const host = await createTestHost([], { faux: { models: [{ id: "m", contextWindow: 20000, maxTokens: 4096 }] } });
+  const ui = createUiHarness();
+  appendFlaggedUser(host, "small focus");
+  const gate = createGate();
+  host.faux.setResponses([
+    async () => {
+      await gate.hold();
+      return fauxAssistantMessage("first");
+    },
+    () => fauxAssistantMessage("second"),
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const run = host.session.prompt("start");
+    await gate.started;
+    await host.session.prompt("lorem ipsum ".repeat(5500), { streamingBehavior: "followUp" });
+    gate.release();
+    await run;
+    await host.session.waitForIdle();
+    assert.equal(host.faux.state.callCount, 1);
+    assert.equal(ui.notifications.length, 1);
+    assert.match(ui.notifications[0]?.message ?? "", /this model permits \d+\. Nothing was truncated/);
+  } finally {
+    host.cleanup();
+  }
+});
+
+for (const followUp of ["user", "custom"] as const) {
+  test(`a blocked run sends no queued ${followUp} follow-up`, async () => {
+    const host = await createTestHost([], {
+      tools: ["read"],
+      faux: {
+        models: [
+          { id: "large", contextWindow: 128000, maxTokens: 16384 },
+          { id: "tiny", contextWindow: 4000, maxTokens: 1000 },
+        ],
+      },
+    });
+    const ui = createUiHarness();
+    appendFlaggedUser(host, "blocked focus");
+    const file = join(host.root, "tool-input.txt");
+    writeFileSync(file, "tool output");
+    const gate = createGate();
+    host.faux.setResponses([
+      async () => {
+        await gate.hold();
+        return readToolCall(file);
+      },
+      fauxAssistantMessage("must remain queued"),
+      fauxAssistantMessage("must remain queued"),
+    ]);
+    try {
+      await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+      const run = host.session.prompt("start");
+      await gate.started;
+      if (followUp === "user") {
+        await host.session.prompt("queued follow-up", { streamingBehavior: "followUp" });
+      } else {
+        await host.session.sendCustomMessage(
+          { customType: "test/result", content: "queued follow-up", display: false },
+          { deliverAs: "followUp", triggerTurn: true },
+        );
+      }
+      // The request after the tool result no longer fits, so the guard blocks the run there.
+      const tiny = host.faux.models[1];
+      assert.ok(tiny);
+      await host.session.setModel(tiny);
+      gate.release();
+      await run;
+      await host.session.waitForIdle();
+      assert.equal(host.faux.state.callCount, 1);
+      assert.equal(host.faux.getPendingResponseCount(), 2);
+      const errors = ui.notifications.filter(({ type }) => type === "error");
+      assert.equal(errors.length, 1);
+      assert.match(errors[0]?.message ?? "", /Nothing was truncated/);
+    } finally {
+      host.cleanup();
+    }
+  });
+}
 
 test("faux cache accounting follows stable prefix and flag suffix invalidation", async () => {
   const host = await createTestHost();

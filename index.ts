@@ -56,12 +56,12 @@ function emptyReplay(): FlagReplay {
 
 // Since Pi 1.2.0, a run that sendCustomMessage({ triggerTurn: true }) starts also emits
 // before_agent_start, with messageType "custom" and no prompt (some builds send ""). The
-// Pi 0.84 types predate both. Such a run has no user input to estimate.
+// Pi 0.84 types predate both. No input event precedes such a run.
 type AgentStartInput = { messageType?: string; prompt?: string; images?: readonly InputImage[] };
 
-function userInputTokens(start: AgentStartInput): number {
-  if (start.messageType === "custom" || typeof start.prompt !== "string") return 0;
-  return estimateInputTokens(start.prompt, start.images);
+// The prompt of a run that user input started; undefined for a custom-message run.
+function userPrompt(start: AgentStartInput): string | undefined {
+  return start.messageType === "custom" ? undefined : start.prompt;
 }
 
 export default function piFlag(pi: ExtensionAPI): void {
@@ -105,6 +105,16 @@ export default function piFlag(pi: ExtensionAPI): void {
       const record = parseFlagRecord(entry.data);
       return record?.sessionId === sessionId;
     });
+  };
+
+  // Refresh the flags and say why a new run must not be sent, if it must not. Runs that user
+  // input starts and runs that custom messages start pass the same checks.
+  const admissionRefusal = (ctx: ExtensionContext): string | undefined => {
+    refreshState(ctx);
+    const blocker = state.replay.blockers[0];
+    if (blocker) return `${blocker.message}. Nothing was omitted. Open /flag to unflag it.`;
+    const admission = assessFocusAdmission({ focus: state.serialized, model: ctx.model });
+    return admission.status === "blocked" ? admission.reason : undefined;
   };
 
   const buildSnapshot = (ctx: ExtensionContext): FlagSelectorSnapshot => {
@@ -248,29 +258,45 @@ export default function piFlag(pi: ExtensionAPI): void {
       event.previousModel.provider !== event.model.provider
     ) {
       ctx.ui.notify(
-        `pi-flag will resend ${state.replay.active.size} active flag(s) (~${state.serialized.estimatedTokens} tokens) in full to provider ${event.model.provider} on the next user-input run.`,
+        `pi-flag will resend ${state.replay.active.size} active flag(s) (~${state.serialized.estimatedTokens} tokens) in full to provider ${event.model.provider} on the next run.`,
         "warning",
       );
     }
   });
 
-  pi.on("input", (_event, ctx) => {
-    delete state.run;
-    refreshState(ctx);
-    const blocker = state.replay.blockers[0];
-    if (blocker) {
-      ctx.ui.notify(`${blocker.message}. Nothing was omitted. Open /flag to unflag it.`, "error");
+  pi.on("input", (event, ctx) => {
+    // Steering and follow-up input typed while a run streams joins that run and keeps its focus.
+    // Idle input drops any stale cache; agent_settled and before_agent_start reset it as well.
+    if (ctx.isIdle()) delete state.run;
+    const refusal = admissionRefusal(ctx);
+    if (refusal !== undefined) {
+      ctx.ui.notify(refusal, "error");
       return { action: "handled" };
     }
-    const admission = assessFocusAdmission({ focus: state.serialized, model: ctx.model });
-    if (admission.status === "blocked") {
-      ctx.ui.notify(admission.reason, "error");
-      return { action: "handled" };
+    // Queued input enters the run's next request, so the final guard counts it too. It is not
+    // expanded yet, so this is a lower bound.
+    if (state.run) {
+      state.run.expandedInputTokens = Math.max(
+        state.run.expandedInputTokens,
+        estimateInputTokens(event.text, event.images),
+      );
     }
     return { action: "continue" };
   });
 
-  pi.on("before_agent_start", (event) => {
+  pi.on("before_agent_start", (event, ctx) => {
+    const prompt = userPrompt(event);
+    if (prompt === undefined) {
+      // No input event admitted this custom-message run, and this hook cannot refuse it. Abort
+      // it before its first request; the context guard aborts it again if it gets that far.
+      const refusal = admissionRefusal(ctx);
+      if (refusal !== undefined) {
+        state.run = { focus: state.serialized, expandedInputTokens: 0, blocked: true };
+        ctx.ui.notify(`pi-flag refused an extension-started run. ${refusal}`, "error");
+        ctx.abort();
+        return;
+      }
+    }
     if (state.serialized.block.length === 0) {
       delete state.run;
       return;
@@ -278,7 +304,7 @@ export default function piFlag(pi: ExtensionAPI): void {
     const focus = state.serialized;
     state.run = {
       focus,
-      expandedInputTokens: userInputTokens(event),
+      expandedInputTokens: prompt === undefined ? 0 : estimateInputTokens(prompt, event.images),
       blocked: false,
     };
     return { systemPrompt: appendFocus(event.systemPrompt, focus) };
@@ -289,13 +315,17 @@ export default function piFlag(pi: ExtensionAPI): void {
     const run = state.run;
     if (!run) {
       ctx.ui.notify(
-        "pi-flag blocked an unsupported direct-trigger turn because its user-input projection hook did not run. Use sendUserMessage for extension-triggered turns.",
+        "pi-flag blocked an unsupported direct-trigger turn because Pi started it without before_agent_start, so the focus could not be projected. Nothing was omitted. On Pi 0.84, extensions must start turns with sendUserMessage.",
         "error",
       );
       ctx.abort();
       return;
     }
-    if (run.blocked) return;
+    if (run.blocked) {
+      // Requests Pi makes after the abort, such as queued follow-ups, stay blocked.
+      ctx.abort();
+      return;
+    }
     const finalSystemPrompt = ctx.getSystemPrompt();
     const integrity = verifyFocusProjection(finalSystemPrompt, run.focus);
     if (integrity.status === "blocked") {

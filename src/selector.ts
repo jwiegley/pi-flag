@@ -44,8 +44,8 @@ export type FlagSelectorOptions = {
 
 const MODES: readonly FlagSelectorMode[] = ["all", "user", "assistant", "flagged"];
 const MAX_VISIBLE_ROWS = 8;
-const PRIVACY_NOTICE =
-  "pi-flag resends flagged text in full on future user-input model runs and their continuations in this session, including after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.";
+export const PRIVACY_NOTICE =
+  "pi-flag resends flagged text in full on future model runs in this session and their continuations, including runs that extensions start and runs after provider changes. Unflagging stops future projection but does not erase session history or prior provider requests.";
 
 export class FlagSelector implements Component, Focusable {
   private readonly tui: TUI;

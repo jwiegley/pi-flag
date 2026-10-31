@@ -341,6 +341,7 @@ test("requires inline privacy consent only before the first activation", async (
   assert.match(privacy, /privacy confirmation/);
   assert.match(privacy, /resends flagged text in full/);
   assert.match(privacy, /provider changes/);
+  assert.match(privacy, /runs that extensions\s+start/);
   assert.match(privacy, /does not erase\s+session history or prior provider requests/);
   terminal.rows = 5;
   terminal.columns = 20;

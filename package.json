@@ -22,7 +22,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test",
+    "test": "node --experimental-strip-types --test 'test/*.test.ts'",
     "pack:check": "npm pack --dry-run --json",
     "check": "npm run typecheck && npm test && npm run pack:check"
   },
@@ -48,6 +48,7 @@
     "@earendil-works/pi-coding-agent": "0.84.4",
     "@earendil-works/pi-tui": "0.84.4",
     "@types/node": "22.19.19",
+    "pi-coding-agent-1x": "npm:@earendil-works/pi-coding-agent@1.4.0",
     "typescript": "5.9.3"
   }
 }

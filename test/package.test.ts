@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { PRIVACY_NOTICE } from "../src/selector.ts";
 
 const packageJsonPath = new URL("../package.json", import.meta.url);
 const readmePath = new URL("../README.md", import.meta.url);
@@ -33,6 +34,7 @@ const expectedDevDependencies = {
   "@earendil-works/pi-coding-agent": "0.84.4",
   "@earendil-works/pi-tui": "0.84.4",
   "@types/node": "22.19.19",
+  "pi-coding-agent-1x": "npm:@earendil-works/pi-coding-agent@1.4.0",
   typescript: "5.9.3",
 };
 
@@ -106,6 +108,8 @@ test("README states the complete compatibility and behavior contract", () => {
   assert.match(readme, /zero runtime dependencies|no runtime dependencies/);
   assert.match(readme, /npm install --ignore-scripts/);
   assert.doesNotMatch(readme, /implementation is in progress/i);
+  assert.ok(readme.includes(`> ${PRIVACY_NOTICE}`), "README must quote the selector's consent notice exactly");
+  assert.doesNotMatch(readme, /user-input/);
 });
 
 test("lockfile records exact direct metadata and registry integrity", () => {
