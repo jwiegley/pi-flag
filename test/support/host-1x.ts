@@ -33,7 +33,7 @@ export const PI_1X_VERSION = (
 ).version;
 
 // Upstream Pi lacks the bounded history reads pi-flag uses; supply them as test/extension.test.ts does.
-type EntryPageOptions = { afterOrdinal?: number; customType?: string; limit?: number };
+type EntryPageOptions = { afterOrdinal?: number; type?: string; customType?: string; limit?: number };
 const boundedSessionManager = SessionManager.prototype as unknown as Record<string, unknown>;
 boundedSessionManager.getRecentActiveEntries = function (
   this: SessionManager,
@@ -48,11 +48,15 @@ boundedSessionManager.getHistorySummary = function (this: SessionManager): { ent
 };
 boundedSessionManager.getEntriesPage = function (
   this: SessionManager,
-  { afterOrdinal = -1, customType, limit = 256 }: EntryPageOptions,
+  { afterOrdinal, type, customType, limit = 256 }: EntryPageOptions,
 ): { entries: SessionEntry[] } {
+  if (afterOrdinal !== undefined && !(Number.isSafeInteger(afterOrdinal) && afterOrdinal >= 0)) {
+    throw new Error("afterOrdinal must be a non-negative safe integer");
+  }
   return {
     entries: this.getEntries()
-      .slice(afterOrdinal + 1)
+      .slice((afterOrdinal ?? -1) + 1)
+      .filter((entry) => type === undefined || entry.type === type)
       .filter((entry) => customType === undefined || (entry.type === "custom" && entry.customType === customType))
       .slice(0, limit),
   };
@@ -67,9 +71,15 @@ export type TestHost1x = {
 };
 
 export async function createTestHost1x(
-  options: { faux?: RegisterFauxProviderOptions; tools?: string[] } = {},
+  options: {
+    faux?: RegisterFauxProviderOptions;
+    tools?: string[];
+    root?: string;
+    sessionManager?: SessionManager;
+  } = {},
 ): Promise<TestHost1x> {
-  const root = mkdtempSync(join(tmpdir(), "pi-flag-1x-test-"));
+  const root = options.root ?? mkdtempSync(join(tmpdir(), "pi-flag-1x-test-"));
+  const removeRootOnCleanup = options.root === undefined;
   const agentDir = join(root, "agent");
   const settingsManager = SettingsManager.inMemory();
   const resourceLoader = new DefaultResourceLoader({
@@ -93,7 +103,7 @@ export async function createTestHost1x(
   });
   modelRuntime.registerNativeProvider(faux.provider);
 
-  const sessionManager = SessionManager.inMemory(root);
+  const sessionManager = options.sessionManager ?? SessionManager.inMemory(root);
   const { session } = await createAgentSession({
     cwd: root,
     agentDir,
@@ -113,7 +123,7 @@ export async function createTestHost1x(
     cleanup() {
       session.dispose();
       modelRuntime.unregisterProvider(faux.provider.id);
-      rmSync(root, { recursive: true, force: true });
+      if (removeRootOnCleanup) rmSync(root, { recursive: true, force: true });
     },
   };
 }

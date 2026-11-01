@@ -16,9 +16,12 @@ import {
   type FlagSelectorSnapshot,
 } from "./src/selector.ts";
 import {
+  dueCheckpoint,
   extractFlagSource,
+  FLAG_CHECKPOINT_TYPE,
   FLAG_RECORD_TYPE,
-  parseFlagRecord,
+  isFlagEntry,
+  parseFlagEntry,
   replayFlags,
   type FlagReplay,
   type PiFlagRecordV1,
@@ -37,11 +40,18 @@ type RuntimeState = {
   };
 };
 
-const MAX_RESTORED_FLAG_RECORDS = 256;
+// Restore reads flag records only among this many newest session entries of any kind.
+const RESTORE_WINDOW_ENTRIES = 256;
+// While a flag is active, its newest checkpoint stays among this many newest entries, checked at
+// every turn start and when a run settles, so RESTORE_WINDOW_ENTRIES - CHECKPOINT_INTERVAL_ENTRIES
+// entries may arrive between two checks before restore would lose it.
+const CHECKPOINT_INTERVAL_ENTRIES = 128;
 const MAX_SELECTOR_ENTRIES = 256;
 
 type BoundedSessionManager = Pick<ExtensionContext["sessionManager"], "getEntry"> & {
-  getEntriesPage(options: { afterOrdinal?: number; customType?: string; limit?: number }): { entries: SessionEntry[] };
+  getEntriesPage(options: { afterOrdinal?: number; type?: string; customType?: string; limit?: number }): {
+    entries: SessionEntry[];
+  };
   getHistorySummary(): { entryCount: number };
   getRecentActiveEntries(options: { limit?: number }): SessionEntry[];
 };
@@ -50,8 +60,24 @@ function boundedSessionManager(ctx: ExtensionContext): BoundedSessionManager {
   return ctx.sessionManager as unknown as BoundedSessionManager;
 }
 
+// Marker records and checkpoints among the newest `count` session entries, oldest first. Without a
+// checkpoint in that range the marker page alone is exact. A page takes one customType and a
+// checkpoint's place among later marker records matters, so only a range that holds a checkpoint is
+// read as one page of every custom entry, which loads other extensions' entries too.
+function flagEntries(sessionManager: BoundedSessionManager, count: number): SessionEntry[] {
+  const { entryCount } = sessionManager.getHistorySummary();
+  const afterOrdinal = entryCount > count ? entryCount - count - 1 : undefined;
+  const range = afterOrdinal === undefined ? {} : { afterOrdinal };
+  const checkpoints = sessionManager.getEntriesPage({ ...range, customType: FLAG_CHECKPOINT_TYPE, limit: 1 });
+  const page =
+    checkpoints.entries.length === 0
+      ? sessionManager.getEntriesPage({ ...range, customType: FLAG_RECORD_TYPE, limit: count })
+      : sessionManager.getEntriesPage({ ...range, type: "custom", limit: count });
+  return page.entries.filter(isFlagEntry);
+}
+
 function emptyReplay(): FlagReplay {
-  return { active: new Map(), warnings: [], blockers: [] };
+  return { active: new Map(), activations: [], warnings: [], blockers: [] };
 }
 
 // Since Pi 1.2.0, a run that sendCustomMessage({ triggerTurn: true }) starts also emits
@@ -74,22 +100,13 @@ export default function piFlag(pi: ExtensionAPI): void {
 
   const restoreEntries = (ctx: ExtensionContext): SessionEntry[] => {
     const sessionManager = boundedSessionManager(ctx);
-    const { entryCount } = sessionManager.getHistorySummary();
-    const afterOrdinal = entryCount > MAX_RESTORED_FLAG_RECORDS
-      ? entryCount - MAX_RESTORED_FLAG_RECORDS - 1
-      : undefined;
-    const records = sessionManager.getEntriesPage({
-      ...(afterOrdinal === undefined ? {} : { afterOrdinal }),
-      customType: FLAG_RECORD_TYPE,
-      limit: MAX_RESTORED_FLAG_RECORDS,
-    }).entries;
+    const records = flagEntries(sessionManager, RESTORE_WINDOW_ENTRIES);
     const sources = new Map<string, SessionEntry>();
     for (const recordEntry of records) {
-      if (recordEntry.type !== "custom") continue;
-      const record = parseFlagRecord(recordEntry.data);
-      if (!record) continue;
-      const source = sessionManager.getEntry(record.targetEntryId);
-      if (source) sources.set(source.id, source);
+      for (const targetEntryId of parseFlagEntry(recordEntry)?.targetEntryIds ?? []) {
+        const source = sessionManager.getEntry(targetEntryId);
+        if (source) sources.set(source.id, source);
+      }
     }
     return [...sources.values(), ...records];
   };
@@ -100,11 +117,7 @@ export default function piFlag(pi: ExtensionAPI): void {
     state.sessionId = sessionId;
     state.replay = replayFlags(entries, sessionId);
     state.serialized = serializeFocus(state.replay.active, sessionId);
-    state.hasCurrentSessionRecords = entries.some((entry) => {
-      if (entry.type !== "custom" || entry.customType !== FLAG_RECORD_TYPE) return false;
-      const record = parseFlagRecord(entry.data);
-      return record?.sessionId === sessionId;
-    });
+    state.hasCurrentSessionRecords = entries.some((entry) => parseFlagEntry(entry)?.sessionId === sessionId);
   };
 
   // Refresh the flags and say why a new run must not be sent, if it must not. Runs that user
@@ -141,14 +154,15 @@ export default function piFlag(pi: ExtensionAPI): void {
       });
     }
 
-    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+    // A dangling flag's row keeps the time it was flagged, whether a marker record or a checkpoint
+    // now carries its activation.
+    const flagTimes = new Map(state.replay.activations.map(({ targetEntryId, flaggedAt }) => [targetEntryId, flaggedAt]));
     for (const blocker of state.replay.blockers) {
       if (!blocker.targetEntryId || seen.has(blocker.targetEntryId)) continue;
-      const recordEntry = entryById.get(blocker.recordEntryId);
       rows.push({
         entryId: blocker.targetEntryId,
         role: "unknown",
-        sourceTimestamp: recordEntry?.timestamp ?? "",
+        sourceTimestamp: flagTimes.get(blocker.targetEntryId) ?? "",
         textBlocks: [],
         active: true,
         onActiveBranch: false,
@@ -347,8 +361,29 @@ export default function piFlag(pi: ExtensionAPI): void {
     }
   });
 
-  pi.on("agent_settled", () => {
+  // Append a checkpoint once the newest CHECKPOINT_INTERVAL_ENTRIES entries alone would no longer
+  // restore the active flags. /flag cannot change flags during a run, so the flags in memory are
+  // current even after their records have left the window. A custom entry never enters model context.
+  const checkpointIfDue = (ctx: ExtensionContext): void => {
+    const { sessionId } = state;
+    if (sessionId === undefined || state.replay.activations.length === 0) return;
+    const recent = flagEntries(boundedSessionManager(ctx), CHECKPOINT_INTERVAL_ENTRIES);
+    const checkpoint = dueCheckpoint(state.replay, recent, sessionId);
+    if (checkpoint) pi.appendEntry(FLAG_CHECKPOINT_TYPE, checkpoint);
+  };
+
+  // One run can append more entries than the restore window holds, so the check runs at every turn
+  // start, when Pi has persisted all of the previous turn and nothing of the next: a checkpoint
+  // never lands between a tool call and its result. The settle check covers a run's final turn.
+  // Both are plain events. turn_end is not: in Pi 1.x, any turn_end handler makes Pi rebuild the
+  // session projection after it on every turn of every session, flagged or not.
+  pi.on("turn_start", (_event, ctx) => {
+    checkpointIfDue(ctx);
+  });
+
+  pi.on("agent_settled", (_event, ctx) => {
     delete state.run;
+    checkpointIfDue(ctx);
   });
 
   pi.registerCommand("flag", {

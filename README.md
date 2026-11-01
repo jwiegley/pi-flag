@@ -25,7 +25,7 @@ Once a remote or npm release is separately authorized, Pi also accepts `pi insta
 
 Run `/flag` in Pi's interactive TUI. The command is unavailable in print, JSON, and RPC modes, and it refuses to open while an agent run or manual compaction is active.
 
-The selector lists the 256 most recent active-branch entries plus sources referenced by its 256 most recent flag records, newest first. Rows remain understandable without color:
+The selector lists the 256 most recent active-branch entries plus the sources named by flag records among the 256 newest session entries, newest first. Rows remain understandable without color:
 
 ```text
 > [flagged] assistant a1b2c3d4 [off-branch] [length] Keep the calibration knob...
@@ -79,16 +79,18 @@ Whitespace, newlines, Unicode, block boundaries, and visible partial text are no
 
 Flag operations append validated `pi-flag/marker` custom records containing the owning session ID, target entry ID, and active state. Flagged text is not copied into the journal; original message entries remain authoritative.
 
+Restore reads flag records only among the 256 newest session entries of any kind, so marker records eventually leave that window. While at least one flag is active, pi-flag checks at the start of every model turn and when a run settles whether the 128 newest entries alone would still restore the same flags; when they would not, it appends one hidden `pi-flag/checkpoint` custom record holding the owning session ID and, in activation order, each active target entry ID and its flag time. Restore starts from the newest checkpoint in the window and applies the marker records after it, so a later unflag wins and the projected block stays byte-identical. Nothing is checkpointed while no flag is active, a session without checkpoints restores as before, and builds that predate checkpoints ignore them. A flag can still drop out if more than 128 entries arrive between two checks, as from one turn with more than 127 tool calls or from many entries added between runs.
+
 - Flags are global within one session ID, including abandoned branches and rewinds.
 - An off-branch source is still projected and is labeled `[off-branch]`.
 - Rewinding before a marker does not undo it; use `/flag` to unflag.
 - Reopening or importing a file with the same session header ID restores flags.
-- `/new`, `/fork`, `/clone`, and CLI `--fork` create a new ID. Copied old-ID marker records are inert.
+- `/new`, `/fork`, `/clone`, and CLI `--fork` create a new ID. Copied old-ID marker records and checkpoints are inert.
 - `--no-session` works only for the process lifetime and is labeled `ephemeral`.
 - A persisted session before its first assistant flush is labeled `not-yet-saved`; it becomes `durable` after the session file exists.
-- A `/flag` toggle may complete while branch summarization is pending because it is a synchronous append-only, session-global metadata event. It neither cancels nor rewrites the summary; the next input replays the full log. No sticky tree-busy flag is used because a tree operation can be cancelled before a terminal tree event.
+- A `/flag` toggle may complete while branch summarization is pending because it is a synchronous append-only, session-global metadata event. It neither cancels nor rewrites the summary; the next input replays the flag records. No sticky tree-busy flag is used because a tree operation can be cancelled before a terminal tree event.
 
-Malformed marker records produce diagnostics and no invented state. A valid active record whose source is missing or no longer eligible blocks every new run, whether user input or a custom message starts it, without silently omitting the flag; `/flag` remains available to append its inactive tombstone.
+Malformed marker records and checkpoints produce diagnostics and no invented state. A valid active record whose source is missing or no longer eligible blocks every new run, whether user input or a custom message starts it, without silently omitting the flag; `/flag` remains available to append its inactive tombstone.
 
 ## Model projection and compaction
 
@@ -135,7 +137,7 @@ Remove the same source recorded by `pi list`, for example:
 pi remove /absolute/path/to/pi-flag
 ```
 
-Removal stops the extension from loading. Existing `pi-flag/marker` custom entries remain inert in session JSONL; uninstalling does not rewrite or erase session history or prior provider requests.
+Removal stops the extension from loading. Existing `pi-flag/marker` and `pi-flag/checkpoint` custom entries remain inert in session JSONL; uninstalling does not rewrite or erase session history or prior provider requests.
 
 ## Development
 

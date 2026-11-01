@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AssistantMessage, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import { serializeFocus } from "../src/focus.ts";
 import {
+  dueCheckpoint,
   extractFlagSource,
+  FLAG_CHECKPOINT_TYPE,
   FLAG_RECORD_TYPE,
+  type FlagActivation,
+  parseFlagCheckpoint,
+  parseFlagEntry,
   parseFlagRecord,
   replayFlags,
+  type PiFlagCheckpointV1,
   type PiFlagRecordV1,
 } from "../src/state.ts";
 
@@ -82,6 +89,14 @@ function markerEntry(
 
 function marker(sessionId: string, targetEntryId: string, active: boolean): PiFlagRecordV1 {
   return { version: 1, sessionId, targetEntryId, active };
+}
+
+function checkpoint(sessionId: string, flags: FlagActivation[]): PiFlagCheckpointV1 {
+  return { version: 1, sessionId, flags };
+}
+
+function checkpointEntry(id: string, data: unknown, index: number): SessionEntry {
+  return markerEntry(id, data, index, FLAG_CHECKPOINT_TYPE);
 }
 
 test("parses only exact V1 records", () => {
@@ -317,4 +332,257 @@ test("replay resolves eligible assistant sources without error metadata", () => 
   assert.deepEqual(replay.active.get("assistant")?.textBlocks, ["recoverable answer"]);
   assert.equal(replay.active.get("assistant")?.assistantStopReason, "error");
   assert.equal(JSON.stringify(replay.active.get("assistant")).includes("provider secret"), false);
+});
+
+test("parses only exact checkpoints, which V1 parsing rejects", () => {
+  const flag = { targetEntryId: "a", flaggedAt: timestamp(1) };
+  const valid = checkpoint("session", [{ targetEntryId: "b", flaggedAt: timestamp(2) }, flag]);
+  assert.deepEqual(parseFlagCheckpoint(valid), valid);
+  assert.deepEqual(parseFlagCheckpoint(checkpoint("session", [])), checkpoint("session", []));
+  // Builds that predate checkpoints read only FLAG_RECORD_TYPE, and their parser rejects this shape.
+  assert.notEqual(FLAG_CHECKPOINT_TYPE, FLAG_RECORD_TYPE);
+  assert.equal(parseFlagRecord(valid), undefined);
+
+  for (const invalid of [
+    undefined,
+    null,
+    "checkpoint",
+    [],
+    {},
+    { ...valid, version: 2 },
+    { ...valid, sessionId: "" },
+    { ...valid, extra: true },
+    { version: 1, sessionId: "session" },
+    { ...valid, flags: "a" },
+    { ...valid, flags: [null] },
+    { ...valid, flags: [[flag]] },
+    { ...valid, flags: [{ ...flag, extra: true }] },
+    { ...valid, flags: [{ targetEntryId: "a" }] },
+    { ...valid, flags: [{ ...flag, targetEntryId: "" }] },
+    { ...valid, flags: [{ ...flag, flaggedAt: 1 }] },
+    { ...valid, flags: [flag, { ...flag, flaggedAt: timestamp(2) }] },
+  ]) {
+    assert.equal(parseFlagCheckpoint(invalid), undefined, JSON.stringify(invalid));
+  }
+});
+
+test("names the session and targets of valid marker records and checkpoints only", () => {
+  const flags = [
+    { targetEntryId: "a", flaggedAt: timestamp(1) },
+    { targetEntryId: "b", flaggedAt: timestamp(2) },
+  ];
+  assert.deepEqual(parseFlagEntry(markerEntry("on", marker("session", "a", false), 1)), {
+    sessionId: "session",
+    targetEntryIds: ["a"],
+  });
+  assert.deepEqual(parseFlagEntry(checkpointEntry("cp", checkpoint("other", flags), 2)), {
+    sessionId: "other",
+    targetEntryIds: ["a", "b"],
+  });
+  for (const entry of [
+    markerEntry("bad", { version: 9 }, 3),
+    markerEntry("swapped", checkpoint("session", flags), 4),
+    checkpointEntry("bad-cp", marker("session", "a", true), 5),
+    markerEntry("unrelated", marker("session", "a", true), 6, "other/record"),
+    userEntry("a", "alpha"),
+  ]) {
+    assert.equal(parseFlagEntry(entry), undefined, entry.id);
+  }
+});
+
+test("a checkpoint replaces earlier records and later records apply over it", () => {
+  const replay = replayFlags(
+    [
+      ...["a", "b", "c", "d"].map((id) => userEntry(id, id)),
+      markerEntry("d-on", marker("session", "d", true), 1),
+      markerEntry("a-on", marker("session", "a", true), 2),
+      markerEntry("b-on", marker("session", "b", true), 3),
+      markerEntry("d-off", marker("session", "d", false), 4),
+      markerEntry("c-on", marker("session", "c", true), 5),
+      // What pi-flag writes here: every active flag in activation order.
+      checkpointEntry(
+        "cp",
+        checkpoint("session", [
+          { targetEntryId: "a", flaggedAt: timestamp(2) },
+          { targetEntryId: "b", flaggedAt: timestamp(3) },
+          { targetEntryId: "c", flaggedAt: timestamp(5) },
+        ]),
+        6,
+      ),
+      markerEntry("a-off", marker("session", "a", false), 7),
+      markerEntry("c-duplicate", marker("session", "c", true), 8),
+      markerEntry("a-again", marker("session", "a", true), 9),
+    ],
+    "session",
+  );
+  assert.deepEqual(replay.activations, [
+    { targetEntryId: "b", flaggedAt: timestamp(3) },
+    { targetEntryId: "c", flaggedAt: timestamp(5) },
+    { targetEntryId: "a", flaggedAt: timestamp(9) },
+  ]);
+  assert.deepEqual([...replay.active.keys()], ["b", "c", "a"]);
+  assert.equal(replay.active.has("d"), false);
+  assert.deepEqual(replay.warnings, []);
+  assert.deepEqual(replay.blockers, []);
+});
+
+test("restores the same flags from a checkpoint as from the full history", () => {
+  const sources = ["a", "b"].map((id) => userEntry(id, id));
+  // Both activations have left the window. Alone, the later duplicate of b would restore a later
+  // flaggedAt; the checkpoint after it carries the original order and times.
+  const window = [
+    markerEntry("b-duplicate", marker("session", "b", true), 4),
+    checkpointEntry(
+      "cp",
+      checkpoint("session", [
+        { targetEntryId: "a", flaggedAt: timestamp(1) },
+        { targetEntryId: "b", flaggedAt: timestamp(2) },
+      ]),
+      5,
+    ),
+  ];
+  const full = replayFlags(
+    [
+      ...sources,
+      markerEntry("a-on", marker("session", "a", true), 1),
+      markerEntry("b-on", marker("session", "b", true), 2),
+      ...window,
+    ],
+    "session",
+  );
+  const restored = replayFlags([...sources, ...window], "session");
+  assert.deepEqual(restored.activations, full.activations);
+  assert.deepEqual([...restored.active.keys()], ["a", "b"]);
+  assert.equal(serializeFocus(restored.active, "session").block, serializeFocus(full.active, "session").block);
+});
+
+test("ignores another session's checkpoint and warns about a malformed one without changing flags", () => {
+  const replay = replayFlags(
+    [
+      userEntry("a", "alpha"),
+      userEntry("b", "beta"),
+      markerEntry("a-on", marker("session", "a", true), 1),
+      checkpointEntry("foreign", checkpoint("other", [{ targetEntryId: "b", flaggedAt: timestamp(2) }]), 2),
+      checkpointEntry("malformed", { version: 1, sessionId: "session", flags: [{ targetEntryId: "b" }] }, 3),
+    ],
+    "session",
+  );
+  assert.deepEqual(replay.activations, [{ targetEntryId: "a", flaggedAt: timestamp(1) }]);
+  assert.deepEqual(replay.warnings, [
+    {
+      code: "malformed-record",
+      recordEntryId: "malformed",
+      message: `Ignored malformed ${FLAG_CHECKPOINT_TYPE} record malformed`,
+    },
+  ]);
+});
+
+test("keeps a dangling target in its checkpoint so that it still blocks", () => {
+  const before = replayFlags([markerEntry("missing-on", marker("session", "missing", true), 1)], "session");
+  const written = dueCheckpoint(before, [], "session");
+  assert.deepEqual(written, checkpoint("session", [{ targetEntryId: "missing", flaggedAt: timestamp(1) }]));
+  const after = replayFlags([checkpointEntry("cp", written, 2)], "session");
+  assert.deepEqual(
+    after.blockers.map(({ code, recordEntryId, targetEntryId }) => ({ code, recordEntryId, targetEntryId })),
+    [{ code: "missing-source", recordEntryId: "cp", targetEntryId: "missing" }],
+  );
+});
+
+test("a checkpoint is due only when the newest entries alone would restore other flags", () => {
+  const sources = [userEntry("a", "alpha"), userEntry("b", "beta")];
+  const aOn = markerEntry("a-on", marker("session", "a", true), 1);
+  const bOn = markerEntry("b-on", marker("session", "b", true), 2);
+  const filler = userEntry("filler", "filler", 3);
+  const full = replayFlags([...sources, aOn, bOn], "session");
+  const flags = [
+    { targetEntryId: "a", flaggedAt: timestamp(1) },
+    { targetEntryId: "b", flaggedAt: timestamp(2) },
+  ];
+  const expected = checkpoint("session", flags);
+
+  const unflagged = replayFlags([aOn, markerEntry("a-off", marker("session", "a", false), 2)], "session");
+  assert.equal(dueCheckpoint(unflagged, [], "session"), undefined);
+  assert.equal(dueCheckpoint(full, [aOn, bOn, filler], "session"), undefined);
+  assert.deepEqual(dueCheckpoint(full, [bOn, filler], "session"), expected);
+  assert.deepEqual(dueCheckpoint(full, [filler], "session"), expected);
+  // A newer duplicate activation alone would restore a later flaggedAt.
+  assert.deepEqual(dueCheckpoint(full, [markerEntry("a-again", marker("session", "a", true), 3), bOn], "session"), expected);
+
+  const written = dueCheckpoint(full, [filler], "session");
+  assert.ok(written);
+  assert.notEqual(written.flags[0], full.activations[0]);
+  assert.equal(dueCheckpoint(full, [checkpointEntry("cp", written, 4), filler], "session"), undefined);
+  assert.deepEqual(dueCheckpoint(full, [checkpointEntry("foreign", checkpoint("other", flags), 4)], "session"), expected);
+  assert.deepEqual(
+    dueCheckpoint(full, [checkpointEntry("reordered", checkpoint("session", [...flags].reverse()), 4)], "session"),
+    expected,
+  );
+});
+
+// Deterministic pseudo-random numbers, so that every history below is reproducible.
+function randomNumbers(seed: number): () => number {
+  let current = seed >>> 0;
+  return () => {
+    current = (Math.imul(current, 1664525) + 1013904223) >>> 0;
+    return current / 2 ** 32;
+  };
+}
+
+test("every restore window that holds the latest checkpoint matches the full history, and none resurrects", () => {
+  const targets = ["t0", "t1", "t2", "t3", "t4"];
+  const sources = targets.map((id) => userEntry(id, `text of ${id}`));
+  let windowsFromCheckpoint = 0;
+  let rescued = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const next = randomNumbers(seed);
+    const pick = () => targets[Math.floor(next() * targets.length)] ?? "t0";
+    // `markers` is the user's own history; checkpoints are what pi-flag would derive from it.
+    const markers: SessionEntry[] = [];
+    const history: SessionEntry[] = [];
+    for (let index = 10; index < 90; index++) {
+      const roll = next();
+      if (roll < 0.55) {
+        const entry = markerEntry(`r${index}`, marker("session", pick(), next() < 0.65), index);
+        markers.push(entry);
+        history.push(entry);
+      } else if (roll < 0.75) {
+        const { activations } = replayFlags(markers, "session");
+        history.push(checkpointEntry(`c${index}`, checkpoint("session", activations), index));
+      } else if (roll < 0.83) {
+        history.push(markerEntry(`f${index}`, marker("other", pick(), true), index));
+      } else if (roll < 0.9) {
+        const foreign = checkpoint("other", [{ targetEntryId: pick(), flaggedAt: timestamp(index) }]);
+        history.push(checkpointEntry(`fc${index}`, foreign, index));
+      } else if (roll < 0.95) {
+        history.push(checkpointEntry(`m${index}`, { version: 1, sessionId: "session", flags: "broken" }, index));
+      } else {
+        history.push(markerEntry(`u${index}`, { unrelated: true }, index, "other/record"));
+      }
+    }
+
+    const expected = replayFlags([...sources, ...markers], "session");
+    const expectedBlock = serializeFocus(expected.active, "session").block;
+    let latestCheckpoint = -1;
+    history.forEach((entry, index) => {
+      if (entry.type === "custom" && entry.customType === FLAG_CHECKPOINT_TYPE) {
+        if (parseFlagCheckpoint(entry.data)?.sessionId === "session") latestCheckpoint = index;
+      }
+    });
+    for (let start = 0; start <= history.length; start++) {
+      const window = history.slice(start);
+      const replay = replayFlags([...sources, ...window], "session");
+      for (const targetEntryId of replay.active.keys()) {
+        assert.ok(expected.active.has(targetEntryId), `seed ${seed} start ${start} resurrected ${targetEntryId}`);
+      }
+      if (start > latestCheckpoint) continue;
+      windowsFromCheckpoint++;
+      assert.deepEqual(replay.activations, expected.activations, `seed ${seed} start ${start}`);
+      assert.equal(serializeFocus(replay.active, "session").block, expectedBlock, `seed ${seed} start ${start}`);
+      const markersOnly = replayFlags([...sources, ...window.filter((entry) => markers.includes(entry))], "session");
+      if (JSON.stringify(markersOnly.activations) !== JSON.stringify(expected.activations)) rescued++;
+    }
+  }
+  // The checkpoint did real work: many windows lost a marker record that mattered.
+  assert.ok(windowsFromCheckpoint > 2000, `${windowsFromCheckpoint} windows held a checkpoint`);
+  assert.ok(rescued > 1000, `${rescued} windows needed their checkpoint`);
 });

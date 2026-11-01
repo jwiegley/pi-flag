@@ -8,6 +8,7 @@ import {
   type Context,
   fauxAssistantMessage,
   fauxProvider,
+  type FauxResponseStep,
   fauxText,
   fauxToolCall,
   type Message,
@@ -29,14 +30,14 @@ import {
 } from "@earendil-works/pi-tui";
 
 import { estimateInputTokens, estimateTextTokens, responseReserve, serializeFocus } from "../src/focus.ts";
-import { FlagSelector } from "../src/selector.ts";
-import { FLAG_RECORD_TYPE, parseFlagRecord, replayFlags } from "../src/state.ts";
+import { FlagSelector, type FlagSelectorRow } from "../src/selector.ts";
+import { FLAG_CHECKPOINT_TYPE, FLAG_RECORD_TYPE, parseFlagRecord, replayFlags } from "../src/state.ts";
 import { createTestHost, type TestHost } from "./support/host.ts";
 
 type CustomSessionEntry = Extract<SessionEntry, { type: "custom" }>;
 
 type RecentOptions = { customType?: string; limit?: number };
-type EntryPageOptions = RecentOptions & { afterOrdinal?: number };
+type EntryPageOptions = RecentOptions & { afterOrdinal?: number; type?: string };
 type BoundedTestSessionManager = {
   getEntriesPage(options: EntryPageOptions): { entries: SessionEntry[] };
   getHistorySummary(): { entryCount: number };
@@ -57,14 +58,19 @@ boundedTestSessionManager.getRecentActiveEntries = function (this: SessionManage
 boundedTestSessionManager.getHistorySummary = function (this: SessionManager): { entryCount: number } {
   return { entryCount: this.getEntries().length };
 };
+// Like the fork, reject a negative cursor rather than read from the start.
 boundedTestSessionManager.getEntriesPage = function (
   this: SessionManager,
-  { afterOrdinal = -1, customType, limit = 256 }: EntryPageOptions,
+  { afterOrdinal, type, customType, limit = 256 }: EntryPageOptions,
 ): { entries: SessionEntry[] } {
+  if (afterOrdinal !== undefined && !(Number.isSafeInteger(afterOrdinal) && afterOrdinal >= 0)) {
+    throw new Error("afterOrdinal must be a non-negative safe integer");
+  }
   return {
     entries: this
       .getEntries()
-      .slice(afterOrdinal + 1)
+      .slice((afterOrdinal ?? -1) + 1)
+      .filter((entry) => type === undefined || entry.type === type)
       .filter((entry) => customType === undefined || (entry.type === "custom" && entry.customType === customType))
       .slice(0, limit),
   };
@@ -239,6 +245,102 @@ function focusForHost(host: TestHost) {
   return serializeFocus(replay.active, host.sessionManager.getSessionId());
 }
 
+// pi-flag restores from the newest RESTORE_WINDOW entries and keeps a checkpoint among the newest
+// CHECKPOINT_INTERVAL entries while flags are active.
+const RESTORE_WINDOW = 256;
+const CHECKPOINT_INTERVAL = 128;
+
+function checkpoints(manager: SessionManager): Array<{ ordinal: number; data: unknown }> {
+  return manager
+    .getEntries()
+    .flatMap((entry, ordinal) =>
+      entry.type === "custom" && entry.customType === FLAG_CHECKPOINT_TYPE ? [{ ordinal, data: entry.data }] : [],
+    );
+}
+
+// The activating marker record of a target.
+function activation(manager: SessionManager, targetEntryId: string): { ordinal: number; timestamp: string } {
+  const entries = manager.getEntries();
+  const ordinal = entries.findIndex(
+    (entry) =>
+      entry.type === "custom" &&
+      entry.customType === FLAG_RECORD_TYPE &&
+      parseFlagRecord(entry.data)?.targetEntryId === targetEntryId &&
+      parseFlagRecord(entry.data)?.active === true,
+  );
+  const entry = entries[ordinal];
+  assert.ok(entry);
+  return { ordinal, timestamp: entry.timestamp };
+}
+
+function appendFiller(host: TestHost, count: number): void {
+  for (let index = 0; index < count; index++) {
+    host.sessionManager.appendMessage({ role: "user", content: `filler ${index}`, timestamp: Date.now() });
+  }
+}
+
+// Record the bounded history reads that pi-flag makes until restore() is called.
+function spyOnHistoryReads(): { pages: EntryPageOptions[]; summaries: number; restore(): void } {
+  const { getEntriesPage, getHistorySummary } = boundedTestSessionManager;
+  const spy = {
+    pages: [] as EntryPageOptions[],
+    summaries: 0,
+    restore() {
+      boundedTestSessionManager.getEntriesPage = getEntriesPage;
+      boundedTestSessionManager.getHistorySummary = getHistorySummary;
+    },
+  };
+  boundedTestSessionManager.getEntriesPage = function (this: SessionManager, options: EntryPageOptions) {
+    spy.pages.push({ ...options });
+    return getEntriesPage.call(this, options);
+  };
+  boundedTestSessionManager.getHistorySummary = function (this: SessionManager) {
+    spy.summaries++;
+    return getHistorySummary.call(this);
+  };
+  return spy;
+}
+
+// Append filler until the entry at `ordinal` is the newest one outside the restore window.
+function ageOut(host: TestHost, ordinal: number): void {
+  appendFiller(host, ordinal + RESTORE_WINDOW + 1 - host.sessionManager.getEntries().length);
+}
+
+// The selector keeps its selection while that row still matches the query, so move to the row.
+function selectRow(selector: FlagSelector, entryId: string): void {
+  const rows = selector.getFilteredRows().length;
+  for (let step = 0; step < rows && selector.getSelectedEntryId() !== entryId; step++) selector.handleInput("\x1b[B");
+  assert.equal(selector.getSelectedEntryId(), entryId);
+}
+
+// The focus block that a run started now would project, or "" when there is none. It replays the
+// session as before_agent_start does for a custom-message run, which appends nothing.
+async function restoredFocus(host: TestHost, ui: UiHarness): Promise<string> {
+  const { systemPrompt, aborts } = await customRunStart(host, ui, {});
+  assert.equal(aborts, 0);
+  if (systemPrompt === undefined) return "";
+  const prefix = `${host.session.systemPrompt}\n\n`;
+  assert.ok(systemPrompt.startsWith(prefix));
+  return systemPrompt.slice(prefix.length);
+}
+
+// Each read call adds an assistant message and a tool result, so one prompt answered by these
+// responses adds 2 * toolTurns + 2 entries in a single run.
+function longRun(file: string, toolTurns: number, systemPrompts: string[]): FauxResponseStep[] {
+  return [
+    ...Array.from({ length: toolTurns }, (_, index) => (context: Context) => {
+      systemPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage([fauxToolCall("read", { path: file }, { id: `read-${index}` })], {
+        stopReason: "toolUse",
+      });
+    }),
+    (context: Context) => {
+      systemPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("done");
+    },
+  ];
+}
+
 function countOccurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
@@ -325,7 +427,11 @@ test("registers only the flag command and planned lifecycle handlers", async () 
       "session_compact_failed",
       "session_shutdown",
       "session_start",
+      "turn_start",
     ]);
+    // In Pi 1.x any turn_end handler makes Pi rebuild the session projection after it on every turn
+    // of every session, so pi-flag must not handle turn_end.
+    assert.equal(extension.handlers.has("turn_end"), false);
     assert.equal(extension.tools.size, 0);
     assert.equal(extension.shortcuts.size, 0);
     assert.equal(extension.flags.size, 0);
@@ -1624,11 +1730,17 @@ test("forked session IDs ignore copied flags while imported same-ID files restor
     const sourceDir = join(sourceRoot, "sessions");
     const sourceManager = SessionManager.create(sourceRoot, sourceDir, { id: "source-session" });
     const sourceId = sourceManager.appendMessage({ role: "user", content: "COPIED FLAG SOURCE", timestamp: 1 });
-    sourceManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    const recordId = sourceManager.appendCustomEntry(FLAG_RECORD_TYPE, {
       version: 1,
       sessionId: sourceManager.getSessionId(),
       targetEntryId: sourceId,
       active: true,
+    });
+    // Checkpoints are copied with marker records and are just as inert under a new ID.
+    sourceManager.appendCustomEntry(FLAG_CHECKPOINT_TYPE, {
+      version: 1,
+      sessionId: sourceManager.getSessionId(),
+      flags: [{ targetEntryId: sourceId, flaggedAt: sourceManager.getEntry(recordId)?.timestamp ?? "" }],
     });
     sourceManager.appendMessage(fauxAssistantMessage("flush source"));
     const sourceFile = sourceManager.getSessionFile();
@@ -1766,6 +1878,535 @@ test("allows an append-only flag toggle while branch summarization is pending", 
     assert.match(systemPrompt, /ROOT OVERLAP SOURCE/);
   } finally {
     releaseSummary();
+    host.cleanup();
+  }
+});
+
+test("keeps a flag through one run longer than the restore window, checkpointing about every 128 entries", async () => {
+  const host = await createTestHost([], { tools: ["read"] });
+  const file = join(host.root, "tool-input.txt");
+  writeFileSync(file, "tool output");
+  const sourceId = appendFlaggedUser(host, "LONG RUN FOCUS");
+  const record = activation(host.sessionManager, sourceId);
+  const focus = focusForHost(host);
+  const systemPrompts: string[] = [];
+  host.faux.setResponses([
+    ...longRun(file, 140, systemPrompts),
+    (context) => {
+      systemPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("SECOND FLAG CANDIDATE");
+    },
+  ]);
+  const candidate = () =>
+    host.sessionManager
+      .getEntries()
+      .find((entry) => entry.type === "message" && JSON.stringify(entry.message).includes("SECOND FLAG CANDIDATE"));
+  const ui = createUiHarness(async (component) => {
+    const selector = requireFlagSelector(component);
+    const entry = candidate();
+    assert.ok(entry);
+    selector.handleInput("SECOND FLAG CANDIDATE");
+    selectRow(selector, entry.id);
+    selector.handleInput("\r");
+    await nextTurn();
+    selector.handleInput("\x1b");
+  });
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("start the long run");
+    await host.session.prompt("after the long run");
+    const entries = host.sessionManager.getEntries();
+    assert.ok(record.ordinal < entries.length - RESTORE_WINDOW, "the marker record left the restore window");
+    assert.equal(systemPrompts.length, 142);
+    for (const systemPrompt of systemPrompts) {
+      assert.equal(systemPrompt, systemPrompts[0]);
+      assert.equal(countOccurrences(systemPrompt, focus.block), 1);
+    }
+
+    const written = checkpoints(host.sessionManager);
+    assert.ok(written.length >= 2);
+    let anchor = record.ordinal;
+    for (const { ordinal, data } of written) {
+      // A mid-run checkpoint sits between turns: right after the previous turn's tool result and
+      // right before the next assistant message.
+      const previous = entries[ordinal - 1];
+      const next = entries[ordinal + 1];
+      assert.ok(previous?.type === "message" && previous.message.role === "toolResult");
+      assert.ok(next?.type === "message" && next.message.role === "assistant");
+      // Written at the first turn start after the previous anchor left the newest 128 entries; each
+      // turn adds two entries.
+      const distance = ordinal - anchor;
+      assert.ok(distance > CHECKPOINT_INTERVAL && distance <= CHECKPOINT_INTERVAL + 2, `${distance} entries apart`);
+      assert.deepEqual(data, {
+        version: 1,
+        sessionId: host.sessionManager.getSessionId(),
+        flags: [{ targetEntryId: sourceId, flaggedAt: record.timestamp }],
+      });
+      anchor = ordinal;
+    }
+    assert.equal(focusForHost(host).block, focus.block);
+    assert.equal(await restoredFocus(host, ui), focus.block);
+
+    // The checkpoint still marks this session as having flags, so flagging another entry asks for
+    // no consent again although the marker record is gone from the window.
+    await runFlag(host, commandContext(host, ui.ui));
+    const flagged = candidate();
+    const latest = written.at(-1);
+    assert.ok(flagged && latest);
+    assert.ok(activation(host.sessionManager, flagged.id).ordinal > latest.ordinal);
+    assert.deepEqual(ui.notifications, []);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("restores a flag from its checkpoint after reopening the session", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-flag-checkpoint-restart-"));
+  const sessionDir = join(root, "sessions");
+  const file = join(root, "tool-input.txt");
+  writeFileSync(file, "tool output");
+  let sessionFile = "";
+  let block = "";
+  try {
+    const first = await createTestHost([], {
+      root,
+      sessionManager: SessionManager.create(root, sessionDir, { id: "checkpoint-restart" }),
+      removeRootOnCleanup: false,
+      tools: ["read"],
+    });
+    try {
+      appendFlaggedUser(first, "RESTARTED FOCUS");
+      block = focusForHost(first).block;
+      const systemPrompts: string[] = [];
+      first.faux.setResponses(longRun(file, 140, systemPrompts));
+      await first.session.bindExtensions({ mode: "tui", uiContext: createUiHarness().ui });
+      await first.session.prompt("long run before the restart");
+      assert.ok(systemPrompts.every((systemPrompt) => countOccurrences(systemPrompt, block) === 1));
+      assert.ok(checkpoints(first.sessionManager).length >= 2);
+      sessionFile = first.sessionManager.getSessionFile() ?? "";
+    } finally {
+      first.cleanup();
+    }
+
+    const reopened = await createTestHost([], {
+      root,
+      sessionManager: SessionManager.open(sessionFile, sessionDir, root),
+      removeRootOnCleanup: false,
+    });
+    let systemPrompt = "";
+    reopened.faux.setResponses([
+      (context) => {
+        systemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("resumed");
+      },
+    ]);
+    try {
+      const entries = reopened.sessionManager.getEntries();
+      const source = entries.find((entry) => entry.type === "message" && JSON.stringify(entry.message).includes("RESTARTED FOCUS"));
+      assert.ok(source);
+      // Only a checkpoint can restore the flag: its marker record is outside the window.
+      assert.ok(activation(reopened.sessionManager, source.id).ordinal < entries.length - RESTORE_WINDOW);
+      await reopened.session.bindExtensions({ mode: "tui", uiContext: createUiHarness().ui });
+      await reopened.session.prompt("after the restart");
+      assert.equal(countOccurrences(systemPrompt, block), 1);
+    } finally {
+      reopened.cleanup();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unflag after a checkpoint wins, and no later restore window brings the flag back", async () => {
+  const host = await createTestHost([], { tools: ["read"] });
+  const file = join(host.root, "tool-input.txt");
+  writeFileSync(file, "tool output");
+  const droppedId = appendFlaggedUser(host, "UNFLAGGED AFTER ITS CHECKPOINT");
+  const keptId = appendFlaggedUser(host, "STILL FLAGGED");
+  const sessionId = host.sessionManager.getSessionId();
+  const firstRun: string[] = [];
+  const secondRun: string[] = [];
+  host.faux.setResponses([...longRun(file, 140, firstRun), ...longRun(file, 140, secondRun)]);
+  const ui = createUiHarness(async (component) => {
+    const selector = requireFlagSelector(component);
+    selector.handleInput("UNFLAGGED AFTER ITS CHECKPOINT");
+    selectRow(selector, droppedId);
+    selector.handleInput("\r");
+    await nextTurn();
+    selector.handleInput("\x1b");
+  });
+  const targets = (data: unknown) =>
+    (data as { flags: Array<{ targetEntryId: string }> }).flags.map(({ targetEntryId }) => targetEntryId);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    await host.session.prompt("first long run");
+    const firstCheckpoint = checkpoints(host.sessionManager).at(-1);
+    assert.ok(firstCheckpoint);
+    assert.deepEqual(targets(firstCheckpoint.data), [droppedId, keptId]);
+
+    await runFlag(host, commandContext(host, ui.ui));
+    const kept = focusForHost(host).block;
+    assert.match(kept, /STILL FLAGGED/);
+    assert.doesNotMatch(kept, /UNFLAGGED AFTER ITS CHECKPOINT/);
+    assert.equal(await restoredFocus(host, ui), kept);
+
+    await host.session.prompt("second long run");
+    assert.ok(secondRun.every((systemPrompt) => countOccurrences(systemPrompt, kept) === 1));
+    const later = checkpoints(host.sessionManager).filter(({ ordinal }) => ordinal > firstCheckpoint.ordinal);
+    assert.ok(later.length >= 1);
+    for (const { data } of later) assert.deepEqual(targets(data), [keptId]);
+
+    // Clear the last flag, then slide the window past every checkpoint and record.
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, { version: 1, sessionId, targetEntryId: keptId, active: false });
+    for (let step = 0; step < 12; step++) {
+      assert.equal(await restoredFocus(host, ui), "", `step ${step}`);
+      appendFiller(host, 32);
+    }
+    assert.equal(await restoredFocus(host, ui), "");
+    assert.deepEqual(ui.notifications, []);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("restores a session without checkpoints as before, up to the oldest entry of the window", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const sourceId = appendFlaggedUser(host, "LEGACY FOCUS");
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const block = focusForHost(host).block;
+    // First the marker record is the oldest of the newest 256 entries, then just older.
+    const { ordinal } = activation(host.sessionManager, sourceId);
+    appendFiller(host, ordinal + RESTORE_WINDOW - host.sessionManager.getEntries().length);
+    assert.equal(await restoredFocus(host, ui), block);
+    appendFiller(host, 1);
+    assert.equal(host.sessionManager.getEntries().length, ordinal + RESTORE_WINDOW + 1);
+    assert.equal(await restoredFocus(host, ui), "");
+    assert.deepEqual(checkpoints(host.sessionManager), []);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("a session without checkpoints gains one at its next turn start and then keeps its flag", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const sourceId = appendFlaggedUser(host, "UPGRADED FOCUS");
+  appendFiller(host, 200);
+  host.faux.setResponses([fauxAssistantMessage("first answer after the upgrade")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const block = focusForHost(host).block;
+    await host.session.prompt("first prompt after the upgrade");
+    assert.equal(checkpoints(host.sessionManager).length, 1);
+    ageOut(host, activation(host.sessionManager, sourceId).ordinal);
+    assert.equal(await restoredFocus(host, ui), block);
+  } finally {
+    host.cleanup();
+  }
+});
+
+for (const event of ["turn_start", "agent_settled"] as const) {
+  test(`${event} appends a checkpoint exactly when the newest 128 entries stop restoring the flags`, async () => {
+    const host = await createTestHost();
+    const ui = createUiHarness();
+    const sourceId = appendFlaggedUser(host, "CADENCE FOCUS");
+    try {
+      await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+      const ctx = commandContext(host, ui.ui);
+      for (let index = 0; index < 400; index++) {
+        appendFiller(host, 1);
+        await emitHandler(host, event, { type: event }, ctx);
+      }
+      // A check at entry count E reads ordinals E - 128 to E - 1, so the marker record at ordinal r
+      // drops out at E = r + 129. The first checkpoint takes that ordinal and each later one comes
+      // 129 entries after the one before.
+      const { ordinal, timestamp } = activation(host.sessionManager, sourceId);
+      const written = checkpoints(host.sessionManager);
+      assert.deepEqual(
+        written.map((checkpoint) => checkpoint.ordinal),
+        [ordinal + 129, ordinal + 258, ordinal + 387],
+      );
+      for (const { data } of written) {
+        assert.deepEqual(data, {
+          version: 1,
+          sessionId: host.sessionManager.getSessionId(),
+          flags: [{ targetEntryId: sourceId, flaggedAt: timestamp }],
+        });
+      }
+    } finally {
+      host.cleanup();
+    }
+  });
+}
+
+test("turn starts and settles append no checkpoint and read no history while nothing is flagged", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const sourceId = appendFlaggedUser(host, "UNFLAGGED AGAIN");
+  host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    version: 1,
+    sessionId: host.sessionManager.getSessionId(),
+    targetEntryId: sourceId,
+    active: false,
+  });
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const ctx = commandContext(host, ui.ui);
+    const reads = spyOnHistoryReads();
+    try {
+      for (let index = 0; index < 300; index++) {
+        appendFiller(host, 1);
+        await emitHandler(host, "turn_start", { type: "turn_start" }, ctx);
+        await emitHandler(host, "agent_settled", { type: "agent_settled" }, ctx);
+      }
+      assert.deepEqual(reads.pages, []);
+      assert.equal(reads.summaries, 0);
+    } finally {
+      reads.restore();
+    }
+    assert.deepEqual(checkpoints(host.sessionManager), []);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("ignores another session's checkpoint when restoring and when deciding that one is due", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const foreignId = host.sessionManager.appendMessage({ role: "user", content: "FOREIGN SOURCE", timestamp: 1 });
+  host.sessionManager.appendCustomEntry(FLAG_CHECKPOINT_TYPE, {
+    version: 1,
+    sessionId: "other-session",
+    flags: [{ targetEntryId: foreignId, flaggedAt: "2026-01-01T00:00:00.000Z" }],
+  });
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    assert.equal(await restoredFocus(host, ui), "");
+
+    const ownId = appendFlaggedUser(host, "OWN FOCUS");
+    const { timestamp } = activation(host.sessionManager, ownId);
+    const block = await restoredFocus(host, ui);
+    assert.match(block, /OWN FOCUS/);
+    assert.doesNotMatch(block, /FOREIGN SOURCE/);
+    appendFiller(host, CHECKPOINT_INTERVAL);
+    // A copy of the flags under another session ID keeps nothing restorable for this one.
+    host.sessionManager.appendCustomEntry(FLAG_CHECKPOINT_TYPE, {
+      version: 1,
+      sessionId: "other-session",
+      flags: [{ targetEntryId: ownId, flaggedAt: timestamp }],
+    });
+    await emitHandler(host, "turn_start", { type: "turn_start" }, commandContext(host, ui.ui));
+    assert.deepEqual(checkpoints(host.sessionManager).at(-1)?.data, {
+      version: 1,
+      sessionId: host.sessionManager.getSessionId(),
+      flags: [{ targetEntryId: ownId, flaggedAt: timestamp }],
+    });
+    ageOut(host, activation(host.sessionManager, ownId).ordinal);
+    assert.equal(await restoredFocus(host, ui), block);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("checkpoints leave the focus bytes unchanged once only a checkpoint restores them", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const userId = host.sessionManager.appendMessage({ role: "user", content: "FLAGGED PROMPT", timestamp: 1 });
+  const assistantId = host.sessionManager.appendMessage(
+    fauxAssistantMessage([fauxText(""), fauxText("FLAGGED ANSWER")], { stopReason: "length" }),
+  );
+  // Flag the larger entry ID first, so that activation order differs from ID order.
+  const [olderId, newerId] = userId > assistantId ? [userId, assistantId] : [assistantId, userId];
+  const sessionId = host.sessionManager.getSessionId();
+  for (const targetEntryId of [olderId, newerId]) {
+    host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, { version: 1, sessionId, targetEntryId, active: true });
+  }
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const ctx = commandContext(host, ui.ui);
+    const before = await restoredFocus(host, ui);
+    assert.equal(before, focusForHost(host).block);
+    assert.ok(before.indexOf(olderId) < before.indexOf(newerId));
+    for (let index = 0; index < 300; index++) {
+      appendFiller(host, 1);
+      await emitHandler(host, "turn_start", { type: "turn_start" }, ctx);
+    }
+    const entryCount = host.sessionManager.getEntries().length;
+    assert.ok(activation(host.sessionManager, newerId).ordinal < entryCount - RESTORE_WINDOW);
+    // restoredFocus replays the window alone, as a restart does.
+    assert.equal(await restoredFocus(host, ui), before);
+    assert.deepEqual(checkpoints(host.sessionManager).at(-1)?.data, {
+      version: 1,
+      sessionId,
+      flags: [olderId, newerId].map((targetEntryId) => ({
+        targetEntryId,
+        flaggedAt: activation(host.sessionManager, targetEntryId).timestamp,
+      })),
+    });
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("the settle check alone keeps a flag whose run ends just past the checkpoint interval", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const sourceId = appendFlaggedUser(host, "SETTLED FOCUS");
+  const { ordinal } = activation(host.sessionManager, sourceId);
+  // The run's only turn start finds the marker record as the oldest of the newest 128 entries. The
+  // prompt and its answer push it out, so only the settle check finds a checkpoint due.
+  appendFiller(host, ordinal + CHECKPOINT_INTERVAL - host.sessionManager.getEntries().length);
+  host.faux.setResponses([fauxAssistantMessage("LAST ENTRY OF THE RUN")]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const block = focusForHost(host).block;
+    await host.session.prompt("a run of one turn");
+    const entries = host.sessionManager.getEntries();
+    const written = checkpoints(host.sessionManager);
+    assert.equal(written.length, 1);
+    // The settle checkpoint follows the run's last entry.
+    assert.equal(written[0]?.ordinal, entries.length - 1);
+    const previous = entries.at(-2);
+    assert.ok(previous?.type === "message" && previous.message.role === "assistant");
+    assert.match(JSON.stringify(previous.message), /LAST ENTRY OF THE RUN/);
+    // Entries added between runs then push the marker record out of the window.
+    ageOut(host, ordinal);
+    assert.equal(await restoredFocus(host, ui), block);
+  } finally {
+    host.cleanup();
+  }
+});
+
+test("a refresh late in one long run keeps a flag whose marker record has left the window", async () => {
+  const host = await createTestHost([], { tools: ["read"] });
+  const ui = createUiHarness();
+  const file = join(host.root, "tool-input.txt");
+  writeFileSync(file, "tool output");
+  const sourceId = appendFlaggedUser(host, "MID-RUN REFRESH FOCUS");
+  const block = focusForHost(host).block;
+  const gate = createGate();
+  const systemPrompts: string[] = [];
+  const responses = longRun(file, 140, systemPrompts);
+  // Hold the 136th request; by then the marker record has left the window.
+  const held = responses[135];
+  assert.ok(typeof held === "function");
+  responses[135] = async (context, options, fauxState, model) => {
+    await gate.hold();
+    return held(context, options, fauxState, model);
+  };
+  host.faux.setResponses([
+    ...responses,
+    (context) => {
+      systemPrompts.push(context.systemPrompt ?? "");
+      return fauxAssistantMessage("after the run");
+    },
+  ]);
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const run = host.session.prompt("start the long run");
+    await gate.started;
+    const { ordinal } = activation(host.sessionManager, sourceId);
+    assert.ok(ordinal < host.sessionManager.getEntries().length - RESTORE_WINDOW);
+    // Steering input refreshes the flags from the window while the run streams; without a
+    // checkpoint from a turn start, that refresh would lose the flag for good.
+    await host.session.prompt("steer late in the run", { streamingBehavior: "steer" });
+    gate.release();
+    await run;
+    await host.session.waitForIdle();
+    await host.session.prompt("after the run");
+    assert.equal(systemPrompts.length, 142);
+    assert.equal(countOccurrences(systemPrompts.at(-1) ?? "", block), 1);
+    assert.deepEqual(ui.notifications, []);
+  } finally {
+    gate.release();
+    host.cleanup();
+  }
+});
+
+test("reads only the checkpoint probe and the marker page until the window holds a checkpoint", async () => {
+  const host = await createTestHost();
+  const ui = createUiHarness();
+  const reads = spyOnHistoryReads();
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const ctx = commandContext(host, ui.ui);
+    // An unflagged session reads the marker page it read before checkpoints, after a one-entry probe.
+    reads.pages.length = 0;
+    assert.equal(await restoredFocus(host, ui), "");
+    assert.deepEqual(
+      [...reads.pages],
+      [
+        { customType: FLAG_CHECKPOINT_TYPE, limit: 1 },
+        { customType: FLAG_RECORD_TYPE, limit: RESTORE_WINDOW },
+      ],
+    );
+
+    // Refreshes and turn starts read no wide page while the window holds no checkpoint.
+    const sourceId = appendFlaggedUser(host, "SPIED FOCUS");
+    const block = await restoredFocus(host, ui);
+    assert.match(block, /SPIED FOCUS/);
+    const { ordinal } = activation(host.sessionManager, sourceId);
+    while (host.sessionManager.getEntries().length < ordinal + CHECKPOINT_INTERVAL) {
+      appendFiller(host, 1);
+      await emitHandler(host, "turn_start", { type: "turn_start" }, ctx);
+    }
+    assert.deepEqual(checkpoints(host.sessionManager), []);
+    assert.ok(reads.pages.length > 2);
+    assert.ok(reads.pages.every((options) => options.type === undefined));
+    assert.ok(reads.pages.every(({ customType, limit }) => customType !== FLAG_CHECKPOINT_TYPE || limit === 1));
+
+    // Once the window holds a checkpoint, restore reads the custom entries in log order.
+    appendFiller(host, 1);
+    await emitHandler(host, "turn_start", { type: "turn_start" }, ctx);
+    assert.equal(checkpoints(host.sessionManager).length, 1);
+    reads.pages.length = 0;
+    assert.equal(await restoredFocus(host, ui), block);
+    assert.ok(reads.pages.some((options) => options.type === "custom" && options.customType === undefined));
+  } finally {
+    reads.restore();
+    host.cleanup();
+  }
+});
+
+test("a dangling flag's row keeps its flag time and place once a checkpoint carries it", async () => {
+  const host = await createTestHost();
+  const snapshots: FlagSelectorRow[][] = [];
+  const ui = createUiHarness((component) => {
+    snapshots.push(requireFlagSelector(component).getFilteredRows().map((row) => ({ ...row })));
+  });
+  host.sessionManager.appendCustomEntry(FLAG_RECORD_TYPE, {
+    version: 1,
+    sessionId: host.sessionManager.getSessionId(),
+    targetEntryId: "missing-entry",
+    active: true,
+  });
+  const { ordinal, timestamp } = activation(host.sessionManager, "missing-entry");
+  // Every later entry, the checkpoint included, gets a later timestamp.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  try {
+    await host.session.bindExtensions({ mode: "tui", uiContext: ui.ui });
+    const ctx = commandContext(host, ui.ui);
+    for (let index = 0; index <= CHECKPOINT_INTERVAL; index++) {
+      appendFiller(host, 1);
+      await emitHandler(host, "turn_start", { type: "turn_start" }, ctx);
+    }
+    const [written] = checkpoints(host.sessionManager);
+    assert.ok(written);
+    assert.ok((host.sessionManager.getEntries()[written.ordinal]?.timestamp ?? "") > timestamp);
+    await runFlag(host, ctx);
+    ageOut(host, ordinal);
+    await runFlag(host, ctx);
+    assert.equal(snapshots.length, 2);
+    // Rows are newest first, and the dangling flag is older than every filler message.
+    for (const rows of snapshots) {
+      const row = rows.at(-1);
+      assert.equal(row?.entryId, "missing-entry");
+      assert.equal(row?.sourceTimestamp, timestamp);
+      assert.match(row?.diagnostic ?? "", /missing/);
+    }
+  } finally {
     host.cleanup();
   }
 });

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { SessionManager } from "pi-coding-agent-1x";
 
-import { FLAG_RECORD_TYPE } from "../src/state.ts";
+import { FLAG_CHECKPOINT_TYPE, FLAG_RECORD_TYPE, parseFlagRecord } from "../src/state.ts";
 import {
   createTestHost1x,
   fauxAssistantMessage,
@@ -208,3 +210,95 @@ for (const streamingBehavior of ["steer", "followUp", undefined] as const) {
     }
   });
 }
+
+// The focus block that pi-flag appended to a system prompt.
+function focusBlock(systemPrompt: string): string {
+  const start = systemPrompt.indexOf("## pi-flag: significant session observations");
+  const sentinel = systemPrompt.indexOf(SENTINEL, start);
+  assert.ok(start >= 0 && sentinel > start);
+  return systemPrompt.slice(start, systemPrompt.indexOf("-->", sentinel) + "-->".length);
+}
+
+// pi-flag checks at turn_start and agent_settled, plain events in Pi 1.x as in 0.84. Pi 1.x
+// dispatches turn_end as an actionable boundary that rebuilds context, which pi-flag stays out of.
+test("Pi 1.x keeps a flag through one run longer than the restore window and after reopening the session", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-flag-1x-checkpoint-"));
+  const sessionDir = join(root, "sessions");
+  const file = join(root, "tool-input.txt");
+  writeFileSync(file, "tool output");
+  let sessionFile = "";
+  let block = "";
+  try {
+    const first = await createTestHost1x({
+      tools: ["read"],
+      root,
+      sessionManager: SessionManager.create(root, sessionDir, { id: "pi-1x-checkpoint" }),
+    });
+    const systemPrompts: string[] = [];
+    first.faux.setResponses([
+      ...Array.from({ length: 140 }, (_, index) => (context: { messages: Parameters<typeof getCurrentSystemPrompt>[0] }) => {
+        systemPrompts.push(getCurrentSystemPrompt(context.messages));
+        return fauxAssistantMessage([fauxToolCall("read", { path: file }, { id: `read-${index}` })], {
+          stopReason: "toolUse",
+        });
+      }),
+      (context) => {
+        systemPrompts.push(getCurrentSystemPrompt(context.messages));
+        return fauxAssistantMessage("done");
+      },
+    ]);
+    try {
+      appendFlaggedUser(first, "PI 1X CHECKPOINTED FOCUS");
+      const notifications = await bindExtensions(first);
+      await first.session.prompt("long run");
+      await first.session.waitForIdle();
+      assert.equal(systemPrompts.length, 141);
+      block = focusBlock(systemPrompts[0] ?? "");
+      assert.match(block, /PI 1X CHECKPOINTED FOCUS/);
+      for (const systemPrompt of systemPrompts) assert.equal(systemPrompt, systemPrompts[0]);
+
+      const entries = first.sessionManager.getEntries();
+      const marker = entries.findIndex(
+        (entry) => entry.type === "custom" && entry.customType === FLAG_RECORD_TYPE && parseFlagRecord(entry.data)?.active,
+      );
+      assert.ok(marker >= 0 && marker < entries.length - 256, "the marker record left the restore window");
+      const written = entries.flatMap((entry, ordinal) =>
+        entry.type === "custom" && entry.customType === FLAG_CHECKPOINT_TYPE ? [ordinal] : [],
+      );
+      assert.ok(written.length >= 2);
+      for (const [index, ordinal] of written.entries()) {
+        assert.ok(ordinal - (written[index - 1] ?? marker) > 128);
+        // A mid-run checkpoint sits between turns: right after the previous turn's tool result and
+        // right before the next assistant message.
+        const previous = entries[ordinal - 1];
+        const next = entries[ordinal + 1];
+        assert.ok(previous?.type === "message" && previous.message.role === "toolResult");
+        assert.ok(next?.type === "message" && next.message.role === "assistant");
+      }
+      assert.deepEqual(notifications, []);
+      sessionFile = first.sessionManager.getSessionFile() ?? "";
+    } finally {
+      first.cleanup();
+    }
+
+    const reopened = await createTestHost1x({ root, sessionManager: SessionManager.open(sessionFile, sessionDir, root) });
+    let resumed = "";
+    reopened.faux.setResponses([
+      (context) => {
+        resumed = getCurrentSystemPrompt(context.messages);
+        return fauxAssistantMessage("resumed");
+      },
+    ]);
+    try {
+      const notifications = await bindExtensions(reopened);
+      await reopened.session.prompt("after reopening");
+      await reopened.session.waitForIdle();
+      assert.equal(focusBlock(resumed), block);
+      assert.deepEqual(notifications, []);
+    } finally {
+      reopened.cleanup();
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
